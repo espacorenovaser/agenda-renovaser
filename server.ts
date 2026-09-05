@@ -2,7 +2,6 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type, type FunctionDeclaration } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
 
@@ -857,6 +856,7 @@ Corpo:
 // Vite Middleware & static serving
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -875,4 +875,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// In standard environments (local / Cloud Run container), start the HTTP listener.
+// In serverless environments (e.g. Vercel), export the Express app directly.
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export { app };
+export default app;
