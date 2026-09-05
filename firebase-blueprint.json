@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and agenda preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "timeZone": { "type": "string" },
+        "defaultMeetingDurationMinutes": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "email", "timeZone", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Message in conversation history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "role", "content", "createdAt"]
+    },
+    "MeetingLog": {
+      "title": "MeetingLog",
+      "description": "Audit record of meeting creation, update or cancellation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "eventId": { "type": "string" },
+        "title": { "type": "string" },
+        "startDateTime": { "type": "string" },
+        "endDateTime": { "type": "string" },
+        "action": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "action", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user preferences and profile"
+    },
+    "/users/{userId}/chat_messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Stores conversation messages for the user"
+    },
+    "/users/{userId}/meeting_logs/{logId}": {
+      "schema": "MeetingLog",
+      "description": "Stores meeting audit events"
+    }
+  }
+}
