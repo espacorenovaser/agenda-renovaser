@@ -154,7 +154,7 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+  const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
   let lastError: any = null;
 
   for (const model of candidateModels) {
@@ -851,6 +851,11 @@ Corpo:
       error: friendlyError,
     });
   }
+});
+
+// Explicit catch-all for any unhandled /api route so it always returns JSON and NEVER falls through to Vite HTML
+app.all('/api/*', (_req, res) => {
+  res.status(404).json({ error: 'Endpoint da API não encontrado.' });
 });
 
 // Vite Middleware & static serving
