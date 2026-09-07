@@ -9,6 +9,8 @@ import {
   Video,
   Clock,
   ArrowRight,
+  ExternalLink,
+  HelpCircle,
 } from 'lucide-react';
 import {
   initAuth,
@@ -25,6 +27,7 @@ import {
   getRecentMeetingLogs,
 } from './lib/firestoreService';
 import { getCurrentSaoPauloIso } from './lib/dateUtils';
+import { getSampleEvents } from './lib/sampleEvents';
 import type { CalendarEvent, ChatMessage, PendingAction, MeetingAuditLog, AppUser } from './types';
 import {
   getActiveUser,
@@ -38,16 +41,28 @@ import { ChatAssistant } from './components/ChatAssistant';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { MeetingHistoryModal } from './components/MeetingHistoryModal';
 import { RenovaserAuthModal } from './components/RenovaserAuthModal';
+import { AuthHelpModal } from './components/AuthHelpModal';
 
 export default function App() {
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>(() => getSampleEvents());
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [prefilledInput, setPrefilledInput] = useState<string>('');
+
+  // Auth Error / Help Modal state
+  const [authErrorModal, setAuthErrorModal] = useState<{
+    title: string;
+    message: string;
+    code?: string;
+    isIframe?: boolean;
+    details?: string;
+  } | null>(null);
 
   // Instituto RenovaSer Active User State (Admins: Claudir, Cleci, Gorete or Professional)
   const [activeUser, setActiveUserState] = useState<AppUser | null>(() => {
@@ -211,6 +226,7 @@ export default function App() {
         setUser(result.user);
         setAccessTokenState(result.accessToken);
         setIsTokenExpired(false);
+        setIsDemoMode(false);
         try {
           await syncUserProfile(result.user);
         } catch (profileErr) {
@@ -223,7 +239,7 @@ export default function App() {
           {
             id: 'reconnect-' + Date.now(),
             role: 'assistant',
-            content: '✅ Conta do Google Agenda conectada com sucesso! As permissões estão ativas e renovadas. Como posso te ajudar agora?',
+            content: '✅ Conta do Google Agenda conectada com sucesso! As permissões estão ativas e sincronizadas. Como posso te ajudar agora?',
             createdAt: new Date().toISOString(),
           },
         ]);
@@ -231,6 +247,41 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Erro de autenticação Google:', err);
+      const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+      const code = err?.code || '';
+      const msg = String(err?.message || err || '');
+
+      let title = 'Não foi possível conectar com o Google';
+      let message = 'Ocorreu um erro ao abrir a conexão da conta Google.';
+
+      if (code === 'auth/popup-blocked' || msg.toLowerCase().includes('popup') || msg.toLowerCase().includes('blocked')) {
+        title = 'Janela de Login Bloqueada pelo Navegador';
+        message = isIframe
+          ? 'O navegador bloqueou a janela pop-up de login porque o aplicativo está sendo executado no preview embutido (iframe) do AI Studio. Para conectar com sua conta Google, abra o aplicativo em uma Nova Aba.'
+          : 'O navegador bloqueou a janela pop-up de login do Google. Por favor, permita pop-ups para este endereço nas configurações do seu navegador e tente novamente.';
+      } else if (code === 'auth/unauthorized-domain' || msg.toLowerCase().includes('unauthorized domain')) {
+        title = 'Domínio Não Autorizado no Firebase Auth';
+        message = `O endereço atual (${window.location.hostname}) precisa ser adicionado na lista de Domínios Autorizados no Firebase Authentication. No seu domínio próprio (agenda.institutorenovaser.com.br) funcionará normalmente assim que ativado no painel do Firebase.`;
+      } else if (code === 'auth/popup-closed-by-user') {
+        title = 'Conexão Cancelada';
+        message = 'A janela do Google foi fechada antes de concluir a autorização da agenda.';
+      } else if (code === 'auth/cancelled-popup-request') {
+        title = 'Requisição Concorrente';
+        message = 'Uma solicitação de conexão já estava em andamento.';
+      } else if (isIframe) {
+        title = 'Restrição de Login no Preview';
+        message = 'Por segurança contra rastreamento, o Google e os navegadores bloqueiam pop-ups de autenticação dentro de quadros embutidos (iframes). Clique em "Abrir em Nova Aba" para autenticar.';
+      } else {
+        message = `${msg} (${code || 'sem código'}).`;
+      }
+
+      setAuthErrorModal({
+        title,
+        message,
+        code,
+        isIframe,
+        details: msg,
+      });
     } finally {
       setIsLoggingIn(false);
     }
@@ -242,31 +293,13 @@ export default function App() {
     setUser(null);
     setAccessTokenState(null);
     setIsTokenExpired(false);
-    setEvents([]);
+    setIsDemoMode(true);
+    setEvents(getSampleEvents());
   };
 
   // Send message to Gemini Assistant
   const handleSendMessage = async (text: string) => {
     const token = accessToken || (await getAccessToken());
-    if (!token) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: 'local-' + Date.now(),
-          role: 'user',
-          content: text,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: 'error-' + Date.now(),
-          role: 'assistant',
-          content:
-            'Por favor, clique no botão "Entrar com Google" no topo da página para autorizar o acesso à sua agenda antes de solicitar agendamentos ou consultas.',
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-      return;
-    }
 
     const userMessage: ChatMessage = {
       id: 'usr-' + Date.now(),
@@ -298,7 +331,7 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           message: text,
@@ -315,12 +348,19 @@ export default function App() {
           const errorData = await res.json();
           errMsg = errorData.error || errorData.text || errMsg;
         } catch {
-          // Fallback
+          errMsg = `Falha do servidor (${res.status}): ${res.statusText}`;
         }
         throw new Error(errMsg);
       }
 
-      const data = await res.json();
+      let data: any;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const raw = await res.text();
+        throw new Error(`Resposta inesperada do servidor: ${raw.slice(0, 120)}`);
+      }
 
       if (data.authExpired) {
         setIsTokenExpired(true);
@@ -338,7 +378,7 @@ export default function App() {
         createdAt: new Date().toISOString(),
         pendingActions: data.pendingActions,
         executedEvents: data.executedEvents,
-        authExpired: data.authExpired,
+        authExpired: data.authExpired || (!token && (data.text?.includes('conectar') || data.text?.includes('Google Agenda'))),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -364,7 +404,9 @@ export default function App() {
               action: 'created',
             });
           }
-          fetchCalendarEvents();
+          if (token) {
+            fetchCalendarEvents();
+          }
         }
       }
 
@@ -536,6 +578,16 @@ export default function App() {
         calendarConnected={!!accessToken && !isTokenExpired}
         activeUser={activeUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        isInIframe={isInIframe}
+        onOpenAuthHelp={() =>
+          setAuthErrorModal({
+            title: 'Conexão com o Google Calendar',
+            message: isInIframe
+              ? 'Você está no ambiente de pré-visualização (iframe) do AI Studio. Por questões de segurança, os navegadores impedem popups de login aqui. Abra o aplicativo em uma Nova Aba para conectar com a conta do Google.'
+              : 'Clique em "Conectar Google Agenda" para autorizar a sincronização oficial de eventos.',
+            isIframe: isInIframe,
+          })
+        }
       />
 
       {/* Main Container */}
@@ -552,35 +604,75 @@ export default function App() {
                 Gestão integrada de atendimentos e eventos do instituto
               </h1>
               <p className="text-sm text-[#D7E2D5] max-w-2xl leading-relaxed">
-                Conecte a conta do Google Agenda para sincronizar seus compromissos, verificar a disponibilidade da sala de atendimentos e gerar comunicados por e-mail com hora marcada (60 min).
+                Conecte a conta do Google Agenda para sincronizar seus compromissos, verificar a disponibilidade da sala de atendimentos e agendar com hora marcada (60 a 90 min).
               </p>
+              {isDemoMode && (
+                <div className="inline-flex items-center space-x-1.5 text-xs text-[#C4D9C2] bg-[#384436] px-2.5 py-1 rounded-lg border border-[#4F604D]">
+                  <Sparkles className="w-3.5 h-3.5 text-[#A5C7A2]" />
+                  <span>Modo Demonstração ativo: agenda e assistente liberados para teste!</span>
+                </div>
+              )}
             </div>
 
-            <button
-              onClick={handleLogin}
-              disabled={isLoggingIn}
-              className="px-6 py-3 rounded-xl bg-[#FAF9F5] text-[#2E3029] hover:bg-white font-medium text-sm shadow-xs transition-all flex items-center space-x-3 shrink-0 disabled:opacity-60 cursor-pointer border border-[#DCD8CD]"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 48 48">
-                <path
-                  fill="#EA4335"
-                  d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                />
-                <path
-                  fill="#4285F4"
-                  d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                />
-              </svg>
-              <span>{isLoggingIn ? 'Conectando...' : 'Conectar Google Agenda'}</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 shrink-0 w-full md:w-auto">
+              <button
+                id="btn-hero-google-login"
+                onClick={handleLogin}
+                disabled={isLoggingIn}
+                className="w-full sm:w-auto px-5 py-3 rounded-xl bg-[#FAF9F5] text-[#2E3029] hover:bg-white font-medium text-sm shadow-xs transition-all flex items-center justify-center space-x-3 shrink-0 disabled:opacity-60 cursor-pointer border border-[#DCD8CD]"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 48 48">
+                  <path
+                    fill="#EA4335"
+                    d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                  />
+                </svg>
+                <span>{isLoggingIn ? 'Conectando...' : 'Conectar Google Agenda'}</span>
+              </button>
+
+              {/* If inside iframe, offer open in new tab button */}
+              {isInIframe && (
+                <a
+                  href={typeof window !== 'undefined' ? window.location.href : '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[#556553] hover:bg-[#60735E] text-white font-medium text-xs sm:text-sm shadow-xs transition-all flex items-center justify-center space-x-2 border border-[#6B8068] cursor-pointer"
+                  title="Abrir em Nova Aba para conectar com Google sem restrições de pop-up do iframe"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Abrir em Nova Aba</span>
+                </a>
+              )}
+
+              <button
+                type="button"
+                onClick={() =>
+                  setAuthErrorModal({
+                    title: 'Como conectar a sua Google Agenda',
+                    message: isInIframe
+                      ? 'No preview do AI Studio, o navegador bloqueia pop-ups dentro de iframes. Abra o app em Nova Aba para fazer login direto, ou teste livremente o assistente e a agenda no Modo Demonstração.'
+                      : 'O login utiliza sua conta do Google para ler e agendar compromissos no Google Calendar do Instituto RenovaSer.',
+                    isIframe: isInIframe,
+                  })
+                }
+                className="p-3 rounded-xl bg-transparent hover:bg-[#556553]/60 text-[#D7E2D5] hover:text-white transition-colors flex items-center justify-center cursor-pointer"
+                title="Ajuda sobre a conexão"
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -610,6 +702,7 @@ export default function App() {
               events={visibleEvents}
               isLoading={isCalendarLoading}
               onRefresh={fetchCalendarEvents}
+              isDemoMode={isDemoMode && !accessToken}
               onSelectSlotForAssistant={(prompt) => {
                 setPrefilledInput(prompt);
               }}
@@ -651,6 +744,21 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         activeUser={activeUser}
         onUserChanged={handleActiveUserChanged}
+      />
+
+      {/* Auth Help & Iframe Resolution Modal */}
+      <AuthHelpModal
+        isOpen={!!authErrorModal}
+        onClose={() => setAuthErrorModal(null)}
+        title={authErrorModal?.title || 'Conexão com Google Agenda'}
+        message={authErrorModal?.message || ''}
+        code={authErrorModal?.code}
+        isIframe={authErrorModal?.isIframe ?? isInIframe}
+        details={authErrorModal?.details}
+        onActivateDemoMode={() => {
+          setIsDemoMode(true);
+          setEvents(getSampleEvents());
+        }}
       />
     </div>
   );

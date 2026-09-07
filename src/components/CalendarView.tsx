@@ -27,6 +27,7 @@ interface CalendarViewProps {
   onRefresh: () => void;
   onSelectSlotForAssistant: (prompt: string) => void;
   onRequestCancel: (event: CalendarEvent) => void;
+  isDemoMode?: boolean;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -35,6 +36,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onRefresh,
   onSelectSlotForAssistant,
   onRequestCancel,
+  isDemoMode,
 }) => {
   const [activeTab, setActiveTab] = useState<'today' | 'tomorrow' | 'week'>('today');
   const [categoryFilter, setCategoryFilter] = useState<'all' | ScheduleCategory>('all');
@@ -139,8 +141,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <CalendarIcon className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-[#2E3029]">Agenda da Equipe</h2>
-            <p className="text-xs text-[#76766D]">Sincronizado com Google Calendar</p>
+            <div className="flex items-center space-x-1.5">
+              <h2 className="text-sm font-semibold text-[#2E3029]">Agenda da Equipe</h2>
+              {isDemoMode && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#E8EFE9] text-[#3D5A3F] border border-[#C2D6C0]">
+                  Modo Demonstração
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#76766D]">
+              {isDemoMode
+                ? 'Exibindo eventos de exemplo • Conecte Google Agenda para dados reais'
+                : 'Sincronizado com Google Calendar'}
+            </p>
           </div>
         </div>
 
