@@ -199,7 +199,7 @@ async function generateContentWithRetry(
 app.post('/api/assistant/chat', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    const { message, history, nowIso, activeUser, registeredUsers } = req.body;
+    const { message, history, nowIso, activeUser, registeredUsers, currentEvents } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Mensagem vazia.' });
@@ -382,82 +382,87 @@ app.post('/api/assistant/chat', async (req, res) => {
       },
     };
 
-    const systemInstruction = `Você é o aplicativo completo de "Agenda Interna do Instituto RenovaSer". Sua função é gerenciar toda a agenda do instituto: atendimentos dos profissionais com hora marcada na sala do instituto, reuniões da equipe e eventos gerais do instituto, além da comunicação por e-mail com todos os envolvidos.
+    const systemInstruction = `Você é o aplicativo completo de "Agenda Interna do Instituto RenovaSer". Sua função é gerenciar toda a agenda do instituto: atendimentos dos profissionais com hora marcada, eventos gerais e comunicação por e-mail.
 
 CONTAS E ACESSOS:
 
-1. ADMINISTRADORES (acesso total):
-Existem exatamente 3 administradores, que enxergam e gerenciam TUDO (agenda completa, todos os profissionais, todos os agendamentos e eventos):
-- Administrador: Claudir (e-mail: claudirisrael@gmail.com, senha: Rs12345678)
-- Administradora: Cleci (e-mail: clecimarchioro@gmail.com, senha: Rs12345678)
-- Administradora: Gorete (e-mail: mmgorete00@gmail.com, senha: RS12345678)
-Regra: os 3 administradores acessam exatamente o MESMO conteúdo. Qualquer ação de um admin é visível para os outros dois.
+1. ADMINISTRADORES (acesso total e idêntico):
+Existem 3 administradores que enxergam e gerenciam TUDO (agenda completa, todos os profissionais, todos os agendamentos e eventos). Os 3 acessam exatamente o MESMO conteúdo — qualquer ação de um aparece para os outros:
+- Claudir (e-mail: claudirisrael@gmail.com, senha: Rs12345678)
+- Cleci (e-mail: clecimarchioro@gmail.com, senha: Rs12345678)
+- Gorete (e-mail: mmgorete00@gmail.com, senha: RS12345678)
 
-2. PROFISSIONAIS (acesso próprio):
-Profissionais são pessoas que atendem com hora marcada na sala do instituto. Fluxo:
-- PRIMEIRO ACESSO (CADASTRO): O profissional informa nome completo, e-mail, senha que ele mesmo escolhe e sua área de atuação (ex: psicólogo, fisioterapeuta, nutricionista). Acione 'registerProfessional' se esses dados forem fornecidos.
-- LOGIN: Todo acesso é feito com e-mail + senha (tanto administradores quanto profissionais). Acione 'loginUser' quando o usuário desejar efetuar login.
-- O profissional SÓ enxerga e SÓ pode alterar a SUA própria agenda de atendimentos. Ele NÃO vê nem altera a agenda dos outros profissionais (apenas se o admin autorizar).
+2. PROFISSIONAIS (acesso restrito à própria agenda):
+- CADASTRO: o profissional informa nome completo, e-mail, senha escolhida por ele e área de atuação (ex: psicólogo, fisioterapeuta, nutricionista). Após cadastrar com 'registerProfessional', já pode fazer login.
+- LOGIN: todo acesso é por e-mail + senha (admins e profissionais) usando 'loginUser'.
+- O profissional SÓ vê e SÓ altera a PRÓPRIA agenda de atendimentos. Ele NÃO vê a agenda dos outros profissionais.
+- O profissional PODE ver a agenda geral de eventos do instituto (avisos, datas, eventos), mas NÃO os atendimentos de colegas.
 
-3. USUÁRIO ATUAL NA SESSÃO:
-${activeUser ? `Usuário autenticado: ${activeUser.name} (${activeUser.email}) - Papel: ${activeUser.role} ${activeUser.specialty ? `- Especialidade: ${activeUser.specialty}` : ''}` : 'Nenhum usuário logado na interface ainda. Se o usuário quiser fazer login ou se identificar, use loginUser ou solicite as credenciais.'}
+FLUXO DE LOGIN (OBRIGATÓRIO):
+- Ao receber e-mail e senha, chame 'loginUser' para verificar se o usuário existe e se a senha coincide.
+- Se correto: 'Login realizado. Bem-vindo(a), [nome]. Acesso: [Administrador/Profissional].'
+- Se errado: 'E-mail ou senha incorretos. Tente novamente.'
+- NUNCA revele senha de um usuário para outro.
+- Se o usuário não tiver cadastro e for profissional, ofereça o fluxo de cadastro antes:
+  "Não encontrei seu cadastro. Para se cadastrar como profissional, por favor informe: nome completo, e-mail, área de atuação (ex: psicólogo, fisioterapeuta, nutricionista) e a senha desejada."
 
-4. DEFINIÇÃO OBRIGATÓRIA DO QUE ESTÁ SENDO AGENDADO (CLASSIFICAÇÃO):
-Nesta agenda, cada agendamento DEVE ser categorizado em uma das três modalidades abaixo:
+USUÁRIO ATUAL NA SESSÃO:
+${activeUser ? `Usuário ativo: ${activeUser.name} (${activeUser.email}) — Acesso: ${activeUser.role === 'admin' ? 'Administrador' : `Profissional (${activeUser.specialty || 'Área da Saúde'})`}` : 'Nenhum usuário logado na interface ainda. Solicite e-mail e senha para login quando necessário.'}
 
-• ATENDIMENTOS (60 a 90 minutos):
-  - Atendimentos clínicos, terapêuticos ou assistenciais com hora marcada na sala do instituto.
-  - Regra de Tempo: Duração de 60 a 90 minutos (padrão de 60 minutos, ou 90 minutos se solicitado/necessário).
-  - Título deve conter prefixo '[Atendimento]'.
-  - Identifique sempre o profissional responsável.
+FUNCIONALIDADES DO ADMINISTRADOR:
+- Ver agenda completa (todos os atendimentos + eventos).
+- Ver o agendamento individual de cada profissional.
+- Criar, alterar e cancelar qualquer agendamento ou evento.
+- Cadastrar e remover profissionais.
+- Consultar horários ocupados e livres de qualquer profissional.
 
-• REUNIÃO (tempo definido conforme necessidade):
-  - Reuniões da equipe, alinhamentos da diretoria, pedagógicos ou com parceiros/fornecedores.
-  - Regra de Tempo: Duração flexível definida conforme a necessidade informada (ex: 30 min, 45 min, 1h, 2h).
-  - Título deve conter prefixo '[Reunião]'.
+FUNCIONALIDADES DO PROFISSIONAL:
+- Ver eventos gerais do instituto.
+- Ver a própria agenda de atendimentos (horários marcados).
+- Agendar os próprios horários de atendimento na sala.
+- Alterar ou cancelar SOMENTE os próprios agendamentos.
+- Ver os horários livres da semana.
 
-• EVENTOS (com os 4 subtipos oficiais):
-  - Eventos institucionais do Instituto RenovaSer, classificados estritamente em um dos seguintes subtipos:
-    > Workshop (oficinas práticas e vivenciais)
-    > Treinamento (capacitações práticas e técnicas)
-    > Formação (cursos formativos teóricos e módulos)
-    > Transmissão on-line (lives, webinars e encontros remotos; gerar link do Google Meet)
-  - Regra de Tempo: Duração definida conforme a programação do evento.
-  - Título deve conter prefixo correspondente: '[Evento: Workshop]', '[Evento: Treinamento]', '[Evento: Formação]' ou '[Evento: Transmissão on-line]'.
-
-5. REGRAS GERAIS DE AGENDAMENTO:
-- Peça (se não informado): data, horário de início, tipo de agendamento (Atendimento 60-90min, Reunião ou Evento) e horário de término (ou duração).
-- Fuso horário: America/Sao_Paulo (GMT-3).
-- Data e hora atual: ${nowIso || new Date().toISOString()} (America/Sao_Paulo). Converta "amanhã", "próxima segunda", "às 14h" para data e hora reais.
-- Verifique CONFLITOS: antes de confirmar, consulte os horários já ocupados com 'listCalendarEvents'. Se houver choque de horário na sala do instituto ou com o profissional, avise claramente e sugira alternativas livres.
-- Ao criar o evento com 'createCalendarEvent', informe sempre os parâmetros 'category' ('atendimento', 'reuniao', 'evento') e 'eventSubtype' ('workshop', 'treinamento', 'formacao', 'transmissao_online') quando for evento.
-- Depois de confirmar o agendamento, GERAR O COMUNICADO POR E-MAIL OBRIGATÓRIO (item 6) e apresentar o link oficial do Google Agenda para adicionar o evento:
+REGRAS DE AGENDAMENTO:
+- Duração padrão: 60 minutos (ou 90 se informado). Fuso: America/Sao_Paulo (GMT-3).
+- Data e hora de referência atual: ${nowIso || new Date().toISOString()} (America/Sao_Paulo).
+- ANTES de confirmar qualquer agendamento, verifique CONFLITOS:
+  * Se o profissional já tem outro atendimento no mesmo horário → AVISE e sugira alternativas.
+  * Se a sala do instituto já está ocupada naquele horário → AVISE e sugira alternativas.
+  * Se a ferramenta retornar conflito ('conflict: true'), NUNCA confirme — explique o conflito detalhadamente e proponha outros horários.
+- Após confirmar, apresente o link oficial do Google Agenda:
   https://calendar.google.com/calendar/render?action=TEMPLATE&text=TITULO&dates=INICIO/FIM&details=DESCRICAO&add=EMAIL
+  (datas em UTC, formato YYYYMMDDTHHMMSSZ)
 
-6. COMUNICADOS POR E-MAIL (OBRIGATÓRIO):
-Sempre que um agendamento for CRIADO, ALTERADO ou CANCELADO, gere um comunicado por e-mail completo e formatado, pronto para copiar e enviar, exatamente delimitado:
+COMUNICADOS POR E-MAIL (OBRIGATÓRIO):
+Sempre que um atendimento for AGENDADO, ALTERADO ou CANCELADO, gere o comunicado completo formatado:
+- AGENDADO → e-mail de CONFIRMAÇÃO para o profissional e para os 3 administradores.
+- ALTERADO → e-mail de AVISO com os novos horários.
+- CANCELADO → e-mail de CANCELAMENTO informando que o horário está livre.
+- Evento institucional → e-mail de CONVITE para todos os profissionais.
 
+Modelo do comunicado (sempre apresente em bloco delimitado exatamente como abaixo):
 --- COMUNICADO POR E-MAIL ---
-Para: [e-mail dos envolvidos/profissional + e-mails dos administradores: claudirisrael@gmail.com, clecimarchioro@gmail.com, mmgorete00@gmail.com]
-Assunto: [claro e direto, ex: Confirmação de Atendimento / Reunião / Evento - Instituto RenovaSer]
-Corpo:
-[mensagem educada com:]
-- Tipo de Agendamento: [Atendimento (60 a 90 min) | Reunião (Tempo definido conforme necessidade) | Evento: Workshop / Treinamento / Formação / Transmissão on-line]
-- Responsável / Profissional: [Nome]
-- Data e Horário: [Data, Horário de início às Horário de fim (GMT-3)]
-- Duração: [X minutos / Y horas]
-- Local: [Sala do Instituto RenovaSer ou Link do Google Meet]
-- Observações / Pauta
-- Lembrete de pontualidade
+Para: [e-mail do profissional; claudirisrael@gmail.com; clecimarchioro@gmail.com; mmgorete00@gmail.com]
+Assunto: [ex: "Atendimento agendado - Instituto RenovaSer"]
+Corpo: Olá, [nome]! Informamos que seu atendimento foi [agendado/alterado/cancelado]:
+- Data: [data]
+- Horário: [início] às [término]
+- Duração: [min]
+- Local: Sala do Instituto RenovaSer
+- Observações: [se houver]
+Por favor, compareça com antecedência. Atenciosamente, Instituto RenovaSer.
 -----------------------------
 
-7. CONSULTAS E RESPOSTAS:
-- Sempre que o usuário perguntar "quais horários tenho?", "o que tem agendado?", "como está minha agenda?", liste os compromissos indicando claramente a categoria (Atendimento 60-90 min, Reunião ou Evento: Workshop/Treinamento/Formação/Transmissão on-line).
-- Administradores enxergam tudo; profissionais enxergam apenas seus próprios atendimentos + os eventos gerais do instituto.
+CONEXÃO COM GOOGLE AGENDA:
+- Se o usuário clicar em "Conectar Google Agenda", ou perguntar sobre a conexão, explique que a conexão real exige configuração do OAuth no Google Cloud Console (Client ID + Redirect URI apontando para o domínio da Vercel).
+- Se a conexão falhar ou "piscar" sem conectar, oriente:
+  "A conexão com o Google Agenda ainda não está ativa neste modo. Para ativar, configure o Client ID e a URL de redirecionamento no Google Cloud Console e ajuste o app. Enquanto isso, você pode usar o link oficial do Google Agenda que eu gero em cada agendamento."
 
-8. SEGURANÇA E TOM:
-- NUNCA revele senhas no chat.
-- Responda sempre em Português (Brasil), com cordialidade, clareza e precisão.`;
+TOM:
+- Responda sempre em Português (Brasil), direto, educado e profissional.
+- Liste compromissos em tópicos organizados por data e horário.
+- Para admins, identifique de quem é cada atendimento.`;
 
     const ADMIN_CREDENTIALS = [
       { name: 'Claudir', email: 'claudirisrael@gmail.com', pass: 'Rs12345678', role: 'admin' },
@@ -486,7 +491,7 @@ Corpo:
             return {
               success: true,
               user: sessionAuthUser,
-              message: `Login realizado. Bem-vindo(a), ${adminFound.name}.`,
+              message: `Login realizado. Bem-vindo(a), ${adminFound.name}. Acesso: Administrador.`,
             };
           } else {
             return {
@@ -509,7 +514,7 @@ Corpo:
           return {
             success: true,
             user: sessionAuthUser,
-            message: `Login realizado. Bem-vindo(a), ${foundProf.name}.`,
+            message: `Login realizado. Bem-vindo(a), ${foundProf.name}. Acesso: Profissional.`,
           };
         }
 
@@ -548,48 +553,66 @@ Corpo:
         return {
           success: true,
           user: sessionAuthUser,
-          message: `Cadastro realizado com sucesso! Bem-vindo(a), ${cleanName} (${cleanSpec}). Login realizado. Bem-vindo(a), ${cleanName}.`,
+          message: `Cadastro realizado com sucesso! Login realizado. Bem-vindo(a), ${cleanName}. Acesso: Profissional.`,
         };
       }
 
-      if (!authHeader) {
-        return { error: 'TOKEN_EXPIRED', authExpired: true, message: 'Usuário não conectado ao Google Agenda.' };
-      }
-
       if (callName === 'listCalendarEvents') {
-        try {
-          const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-          url.searchParams.set('singleEvents', 'true');
-          url.searchParams.set('orderBy', 'startTime');
-          url.searchParams.set('timeZone', 'America/Sao_Paulo');
-          if (callArgs.timeMin) url.searchParams.set('timeMin', callArgs.timeMin);
-          if (callArgs.timeMax) url.searchParams.set('timeMax', callArgs.timeMax);
-          if (callArgs.query) url.searchParams.set('q', callArgs.query);
+        // Check live Google Calendar API if authHeader is available
+        if (authHeader) {
+          try {
+            const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+            url.searchParams.set('singleEvents', 'true');
+            url.searchParams.set('orderBy', 'startTime');
+            url.searchParams.set('timeZone', 'America/Sao_Paulo');
+            if (callArgs.timeMin) url.searchParams.set('timeMin', callArgs.timeMin);
+            if (callArgs.timeMax) url.searchParams.set('timeMax', callArgs.timeMax);
+            if (callArgs.query) url.searchParams.set('q', callArgs.query);
 
-          const r = await fetch(url.toString(), {
-            headers: { Authorization: authHeader },
-          });
-          if (!r.ok) {
-            if (r.status === 401) {
-              return { error: 'TOKEN_EXPIRED', authExpired: true, message: 'Sessão do Google Agenda expirada. Reconecte sua conta.' };
+            const r = await fetch(url.toString(), {
+              headers: { Authorization: authHeader },
+            });
+            if (r.ok) {
+              const d = await r.json();
+              const items = (d.items || []).map((ev: any) => ({
+                id: ev.id,
+                title: ev.summary || '(Sem título)',
+                start: ev.start?.dateTime || ev.start?.date,
+                end: ev.end?.dateTime || ev.end?.date,
+                attendees: ev.attendees?.map((a: any) => a.email) || [],
+                meetLink: ev.hangoutLink || null,
+                status: ev.status,
+                description: ev.description || '',
+              }));
+              return { count: items.length, events: items };
             }
-            return { error: `Erro da API Google Calendar: ${r.statusText}` };
+          } catch {
+            // Fallback to internal events
           }
-          const d = await r.json();
-          const items = (d.items || []).map((ev: any) => ({
-            id: ev.id,
-            title: ev.summary || '(Sem título)',
-            start: ev.start?.dateTime || ev.start?.date,
-            end: ev.end?.dateTime || ev.end?.date,
-            attendees: ev.attendees?.map((a: any) => a.email) || [],
-            meetLink: ev.hangoutLink || null,
-            status: ev.status,
-            description: ev.description || '',
-          }));
-          return { count: items.length, events: items };
-        } catch (e: any) {
-          return { error: e.message };
         }
+
+        // Query internal events list passed from frontend
+        const internalEvents = Array.isArray(currentEvents) ? currentEvents : [];
+        let filtered = [...internalEvents];
+        if (callArgs.timeMin) {
+          const minMs = new Date(callArgs.timeMin).getTime();
+          filtered = filtered.filter((e) => new Date(e.start).getTime() >= minMs);
+        }
+        if (callArgs.timeMax) {
+          const maxMs = new Date(callArgs.timeMax).getTime();
+          filtered = filtered.filter((e) => new Date(e.start).getTime() <= maxMs);
+        }
+        if (callArgs.query) {
+          const q = callArgs.query.toLowerCase();
+          filtered = filtered.filter(
+            (e) =>
+              (e.title && e.title.toLowerCase().includes(q)) ||
+              (e.description && e.description.toLowerCase().includes(q)) ||
+              (e.professionalName && e.professionalName.toLowerCase().includes(q))
+          );
+        }
+
+        return { count: filtered.length, events: filtered, source: 'agenda_interna_renovaser' };
       }
 
       if (callName === 'createCalendarEvent') {
@@ -622,9 +645,49 @@ Corpo:
             }
           }
 
+          const reqStartMs = new Date(callArgs.startDateTime).getTime();
+          const reqEndMs = new Date(callArgs.endDateTime).getTime();
+
+          // 1. CONFLICT CHECKING:
+          // Overlap condition: (reqStartMs < evEndMs && reqEndMs > evStartMs)
+          const allKnownEvents: any[] = Array.isArray(currentEvents) ? [...currentEvents] : [];
+          const conflicting = allKnownEvents.filter((ev) => {
+            if (!ev.start || !ev.end) return false;
+            const evStartMs = new Date(ev.start).getTime();
+            const evEndMs = new Date(ev.end).getTime();
+            return reqStartMs < evEndMs && reqEndMs > evStartMs;
+          });
+
+          if (conflicting.length > 0) {
+            const conflictEvent = conflicting[0];
+            return {
+              success: false,
+              conflict: true,
+              message: `CONFLITO DETECTADO: A sala do Instituto RenovaSer já está ocupada no horário solicitado com o compromisso "${conflictEvent.title}" (${conflictEvent.start} às ${conflictEvent.end}). REGRA: NUNCA confirme em horário ocupado! Explique claramente o conflito e sugira horários alternativos como 09:00, 11:00 ou 16:00.`,
+              conflictingEvent: conflictEvent,
+              suggestedSlots: ['09:00 às 10:00', '11:00 às 12:00', '14:00 às 15:00', '16:00 às 17:00'],
+            };
+          }
+
+          // Format attendees list (include professional and all 3 admins)
           const attendeesList = Array.isArray(callArgs.attendees)
-            ? callArgs.attendees.map((email: string) => ({ email: email.trim() }))
+            ? [...callArgs.attendees.map((email: string) => ({ email: email.trim() }))]
             : [];
+          
+          if (callArgs.professionalEmail && !attendeesList.some((a) => a.email.toLowerCase() === callArgs.professionalEmail.toLowerCase())) {
+            attendeesList.unshift({ email: callArgs.professionalEmail.trim() });
+          }
+
+          const adminEmails = [
+            'claudirisrael@gmail.com',
+            'clecimarchioro@gmail.com',
+            'mmgorete00@gmail.com',
+          ];
+          for (const adm of adminEmails) {
+            if (!attendeesList.some((a) => a.email.toLowerCase() === adm.toLowerCase())) {
+              attendeesList.push({ email: adm });
+            }
+          }
 
           const categoryHeader =
             category === 'atendimento'
@@ -645,78 +708,94 @@ Corpo:
 
           const fullDescription = [
             categoryHeader,
+            callArgs.professionalName ? `Profissional Responsável: ${callArgs.professionalName}` : '',
             callArgs.description || '',
+            'Local: Sala do Instituto RenovaSer',
             'Instituto RenovaSer • Agenda Interna Oficial',
           ]
             .filter(Boolean)
             .join('\n\n');
 
-          const eventBody: any = {
-            summary: formattedTitle,
+          const startUtc = toGoogleCalendarUtcString(callArgs.startDateTime);
+          const endUtc = toGoogleCalendarUtcString(callArgs.endDateTime);
+          const addEmailsStr = attendeesList.map((a: any) => a.email).join(',');
+          const googleTemplateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+            formattedTitle
+          )}&dates=${startUtc}/${endUtc}&details=${encodeURIComponent(
+            fullDescription
+          )}&add=${encodeURIComponent(addEmailsStr)}`;
+
+          let createdEvent: any = {
+            id: 'rnv-' + Date.now(),
+            title: formattedTitle,
+            start: callArgs.startDateTime,
+            end: callArgs.endDateTime,
+            attendees: attendeesList.map((a: any) => a.email),
+            meetLink: callArgs.createMeetLink || subtype === 'transmissao_online' ? 'https://meet.google.com/rnv-sala-ofc' : null,
+            category,
+            eventSubtype: subtype,
             description: fullDescription,
-            start: {
-              dateTime: callArgs.startDateTime,
-              timeZone: 'America/Sao_Paulo',
-            },
-            end: {
-              dateTime: callArgs.endDateTime,
-              timeZone: 'America/Sao_Paulo',
-            },
-            attendees: attendeesList,
+            location: 'Sala do Instituto RenovaSer',
+            professionalName: callArgs.professionalName,
+            professionalEmail: callArgs.professionalEmail,
+            googleCalendarUrl: googleTemplateUrl,
           };
 
-          const wantMeet = callArgs.createMeetLink === true || subtype === 'transmissao_online';
-          let url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+          // If Google Calendar OAuth token is available, also insert into Google Calendar
+          if (authHeader) {
+            try {
+              const eventBody: any = {
+                summary: formattedTitle,
+                description: fullDescription,
+                start: {
+                  dateTime: callArgs.startDateTime,
+                  timeZone: 'America/Sao_Paulo',
+                },
+                end: {
+                  dateTime: callArgs.endDateTime,
+                  timeZone: 'America/Sao_Paulo',
+                },
+                attendees: attendeesList,
+              };
 
-          if (wantMeet) {
-            url += '?conferenceDataVersion=1';
-            eventBody.conferenceData = {
-              createRequest: {
-                requestId: 'meet-' + Date.now(),
-                conferenceSolutionKey: { type: 'hangoutsMeet' },
-              },
-            };
-          }
+              const wantMeet = callArgs.createMeetLink === true || subtype === 'transmissao_online';
+              let url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 
-          const r = await fetch(url, {
-            method: 'POST',
-            headers: {
-              Authorization: authHeader,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(eventBody),
-          });
+              if (wantMeet) {
+                url += '?conferenceDataVersion=1';
+                eventBody.conferenceData = {
+                  createRequest: {
+                    requestId: 'meet-' + Date.now(),
+                    conferenceSolutionKey: { type: 'hangoutsMeet' },
+                  },
+                };
+              }
 
-          if (!r.ok) {
-            if (r.status === 401) {
-              return { error: 'TOKEN_EXPIRED', authExpired: true, message: 'Sessão do Google Agenda expirada. Reconecte sua conta.' };
+              const r = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  Authorization: authHeader,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(eventBody),
+              });
+
+              if (r.ok) {
+                const gCreated = await r.json();
+                createdEvent.id = gCreated.id || createdEvent.id;
+                createdEvent.meetLink = gCreated.hangoutLink || createdEvent.meetLink;
+                createdEvent.htmlLink = gCreated.htmlLink;
+              }
+            } catch {
+              // Ignore and keep createdEvent
             }
-            const errText = await r.text();
-            return { error: `Falha ao criar evento: ${errText}` };
           }
-
-          const created = await r.json();
-          const startUtc = toGoogleCalendarUtcString(created.start?.dateTime || callArgs.startDateTime);
-          const endUtc = toGoogleCalendarUtcString(created.end?.dateTime || callArgs.endDateTime);
-          const allAdminEmails = 'claudirisrael@gmail.com,clecimarchioro@gmail.com,mmgorete00@gmail.com';
-          const addEmails = attendeesList.map((a: any) => a.email).join(',');
-          const googleTemplateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(created.summary || formattedTitle)}&dates=${startUtc}/${endUtc}&details=${encodeURIComponent(fullDescription)}&add=${encodeURIComponent(addEmails ? `${addEmails},${allAdminEmails}` : allAdminEmails)}`;
 
           return {
             success: true,
-            event: {
-              id: created.id,
-              title: created.summary || formattedTitle,
-              start: created.start?.dateTime || created.start?.date,
-              end: created.end?.dateTime || created.end?.date,
-              attendees: created.attendees?.map((a: any) => a.email) || [],
-              meetLink: created.hangoutLink || null,
-              htmlLink: created.htmlLink,
-              category,
-              eventSubtype: subtype,
-              googleCalendarUrl: googleTemplateUrl,
-            },
+            event: createdEvent,
             googleCalendarUrl: googleTemplateUrl,
+            message: 'Atendimento confirmado com sucesso na agenda interna do Instituto RenovaSer.',
           };
         } catch (e: any) {
           return { error: e.message };

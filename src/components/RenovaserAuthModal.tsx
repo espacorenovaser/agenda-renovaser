@@ -56,8 +56,11 @@ export const RenovaserAuthModal: React.FC<RenovaserAuthModalProps> = ({
 
   const handleAdminQuickSelect = (admin: (typeof INITIAL_ADMINS)[0]) => {
     setLoginEmail(admin.email);
-    setLoginPassword(admin.passwordHash || '');
-    setLoginFeedback(null);
+    setLoginPassword('');
+    setLoginFeedback({
+      isError: false,
+      message: `Administrador(a) ${admin.name} selecionado(a). Digite sua senha para entrar.`,
+    });
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -71,7 +74,10 @@ export const RenovaserAuthModal: React.FC<RenovaserAuthModalProps> = ({
         onClose();
       }, 700);
     } else {
-      setLoginFeedback({ isError: true, message: result.message });
+      setLoginFeedback({
+        isError: true,
+        message: result.message,
+      });
     }
   };
 

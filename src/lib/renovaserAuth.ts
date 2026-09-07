@@ -1,7 +1,7 @@
 import type { AppUser } from '../types';
 
 export interface AppUserWithAuth extends AppUser {
-  passwordHash?: string; // In-memory/client-stored password check
+  passwordHash?: string; // Stored password check
 }
 
 export const ADMIN_EMAILS = [
@@ -37,19 +37,39 @@ export const INITIAL_ADMINS: AppUserWithAuth[] = [
   },
 ];
 
-const USERS_STORAGE_KEY = 'renovaser_registered_users_v2';
-const ACTIVE_USER_KEY = 'renovaser_active_user_v2';
+export const INITIAL_PROFESSIONALS: AppUserWithAuth[] = [
+  {
+    id: 'prof-lucas',
+    name: 'Dr. Lucas Ramos',
+    email: 'lucas.psico@institutorenovaser.com.br',
+    role: 'professional',
+    specialty: 'Psicólogo',
+    createdAt: '2025-01-10T00:00:00.000Z',
+    passwordHash: 'Psico1234',
+  },
+  {
+    id: 'prof-mariana',
+    name: 'Dra. Mariana Silva',
+    email: 'mariana.fisio@institutorenovaser.com.br',
+    role: 'professional',
+    specialty: 'Fisioterapeuta',
+    createdAt: '2025-01-15T00:00:00.000Z',
+    passwordHash: 'Fisio1234',
+  },
+];
+
+const USERS_STORAGE_KEY = 'renovaser_registered_users_v3';
+const ACTIVE_USER_KEY = 'renovaser_active_user_v3';
 
 export function getRegisteredUsers(): AppUserWithAuth[] {
   try {
     const raw = localStorage.getItem(USERS_STORAGE_KEY);
     if (!raw) {
-      // Store initial admins
-      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(INITIAL_ADMINS));
-      return INITIAL_ADMINS;
+      const initialList = [...INITIAL_ADMINS, ...INITIAL_PROFESSIONALS];
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(initialList));
+      return initialList;
     }
     const parsed: AppUserWithAuth[] = JSON.parse(raw);
-    // Ensure all 3 admins exist in the list
     let updated = false;
     for (const adm of INITIAL_ADMINS) {
       const exists = parsed.some((u) => u.email.toLowerCase() === adm.email.toLowerCase());
@@ -64,7 +84,7 @@ export function getRegisteredUsers(): AppUserWithAuth[] {
     return parsed;
   } catch (e) {
     console.warn('Erro ao carregar usuários:', e);
-    return INITIAL_ADMINS;
+    return [...INITIAL_ADMINS, ...INITIAL_PROFESSIONALS];
   }
 }
 
@@ -85,8 +105,7 @@ export function getActiveUser(): AppUser | null {
   } catch (e) {
     console.warn('Erro ao carregar usuário ativo:', e);
   }
-  // Default to Claudir or null
-  return null;
+  return INITIAL_ADMINS[0]; // Claudir by default
 }
 
 export function setActiveUser(user: AppUser | null): void {
@@ -104,7 +123,7 @@ export function setActiveUser(user: AppUser | null): void {
 export function loginWithEmailPassword(
   emailInput: string,
   passwordInput: string
-): { success: boolean; user?: AppUser; message: string } {
+): { success: boolean; user?: AppUser; message: string; notRegistered?: boolean } {
   const cleanEmail = emailInput.trim().toLowerCase();
   const cleanPass = passwordInput.trim();
 
@@ -112,14 +131,22 @@ export function loginWithEmailPassword(
   const found = allUsers.find((u) => u.email.toLowerCase() === cleanEmail);
 
   if (!found) {
-    return { success: false, message: 'E-mail ou senha incorretos. Tente novamente.' };
+    return {
+      success: false,
+      message: 'E-mail ou senha incorretos. Tente novamente.',
+      notRegistered: true,
+    };
   }
 
   // Exact password check
   if (found.passwordHash !== cleanPass) {
-    return { success: false, message: 'E-mail ou senha incorretos. Tente novamente.' };
+    return {
+      success: false,
+      message: 'E-mail ou senha incorretos. Tente novamente.',
+    };
   }
 
+  const roleLabel = found.role === 'admin' ? 'Administrador' : 'Profissional';
   const sanitizedUser: AppUser = {
     id: found.id,
     name: found.name,
@@ -133,7 +160,7 @@ export function loginWithEmailPassword(
   return {
     success: true,
     user: sanitizedUser,
-    message: `Login realizado. Bem-vindo(a), ${found.name}.`,
+    message: `Login realizado. Bem-vindo(a), ${found.name}. Acesso: ${roleLabel}.`,
   };
 }
 

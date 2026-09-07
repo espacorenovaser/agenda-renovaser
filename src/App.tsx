@@ -200,7 +200,7 @@ export default function App() {
 
   // Filter events based on active user role:
   // Admins (Claudir, Cleci, Gorete) see all events;
-  // Professionals only see their own appointments (strictly isolated)
+  // Professionals only see their own appointments (strictly isolated) + general institute events
   const visibleEvents = React.useMemo(() => {
     if (!activeUser || activeUser.role === 'admin') {
       return events;
@@ -208,12 +208,19 @@ export default function App() {
     const profEmail = activeUser.email.toLowerCase();
     const profName = activeUser.name.toLowerCase();
     return events.filter((e) => {
+      // General institutional events are visible to all professionals
+      if (e.category === 'evento' || e.title?.toLowerCase().includes('[evento')) {
+        return true;
+      }
       const inAttendees = e.attendees?.some((att) => att.toLowerCase().includes(profEmail));
       const inTitle = e.title?.toLowerCase().includes(profName);
       const inDesc =
         e.description?.toLowerCase().includes(profEmail) ||
         e.description?.toLowerCase().includes(profName);
-      return inAttendees || inTitle || inDesc;
+      const isOwner =
+        (e as any).professionalEmail?.toLowerCase() === profEmail ||
+        (e as any).professionalName?.toLowerCase().includes(profName);
+      return inAttendees || inTitle || inDesc || isOwner;
     });
   }, [events, activeUser]);
 
@@ -339,6 +346,7 @@ export default function App() {
           nowIso: getCurrentSaoPauloIso(),
           activeUser: activeUser,
           registeredUsers: getRegisteredUsers(),
+          currentEvents: events,
         }),
       });
 
@@ -369,6 +377,14 @@ export default function App() {
       // If AI executed a login tool or updated user profile
       if (data.activeUser) {
         handleActiveUserChanged(data.activeUser);
+      }
+
+      // If new events were created by the assistant, update local calendar state immediately
+      if (data.executedEvents && data.executedEvents.length > 0) {
+        setEvents((prev) => [
+          ...data.executedEvents,
+          ...prev.filter((p) => !data.executedEvents.some((e: any) => e.id === p.id)),
+        ]);
       }
 
       const assistantMsg: ChatMessage = {
