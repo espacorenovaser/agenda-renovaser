@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { UserProfile, AppUser } from '../types';
 import { SAO_PAULO_TZ } from '../lib/dateUtils';
+import logoImg from '../LogoAgenda.png';
 
 interface NavbarProps {
   user: UserProfile | null;
@@ -42,18 +43,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuthHelp,
   onOpenChat,
 }) => {
-  const [currentTime, setCurrentTime] = useState<string>('');
+  const [currentDateTime, setCurrentDateTime] = useState<string>('');
+  const [logoError, setLogoError] = useState<boolean>(false);
 
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
-      const timeStr = new Intl.DateTimeFormat('pt-BR', {
+      const formatted = new Intl.DateTimeFormat('pt-BR', {
         timeZone: SAO_PAULO_TZ,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
       }).format(now);
-      setCurrentTime(timeStr);
+      // formatted is like "15/09/2026, 10:45:00" or "15/09/2026 10:45:00"
+      setCurrentDateTime(formatted.replace(',', ' •'));
     };
 
     updateClock();
@@ -67,31 +73,36 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Brand Identity */}
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white shadow-xs">
-              <Calendar className="w-5 h-5" />
-            </div>
+            {!logoError ? (
+              <img
+                src={logoImg}
+                alt="Logo Agenda Instituto RenovaSer"
+                onError={() => setLogoError(true)}
+                className="w-10 h-10 object-contain rounded-xl shadow-2xs shrink-0"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white shadow-xs shrink-0">
+                <Calendar className="w-5 h-5" />
+              </div>
+            )}
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-bold text-slate-900 text-base sm:text-lg tracking-tight">
-                  Instituto RenovaSer
-                </span>
-                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Agenda Interna
+                  Agenda Instituto RenovaSer
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">
-                Atendimentos com hora marcada, eventos gerais e comunicação oficial
+                Atendimentos | Reuniões | Eventos | Comunicações
               </p>
             </div>
           </div>
 
           {/* Timezone & Controls */}
           <div className="flex items-center space-x-3">
-            {/* SP Time Badge */}
-            <div className="hidden lg:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-mono border border-slate-200">
+            {/* Date & Time Badge */}
+            <div className="hidden lg:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 text-xs font-mono font-medium border border-slate-200">
               <Clock className="w-3.5 h-3.5 text-emerald-700" />
-              <span>SP: {currentTime || '--:--:--'}</span>
-              <span className="text-slate-400">(GMT-3)</span>
+              <span>{currentDateTime || '--/--/---- • --:--:--'}</span>
             </div>
 
             {/* RenovaSer User Badge & Switcher */}
@@ -118,19 +129,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Button to Open Assistant Chat */}
-            {onOpenChat && (
-              <button
-                id="nav-btn-open-chat"
-                type="button"
-                onClick={onOpenChat}
-                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer border border-emerald-800"
-                title="Registrar horário na agenda com o assistente"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
-                <span>+ Registrar Horário</span>
-              </button>
-            )}
 
             {user ? (
               <div className="flex items-center space-x-2 sm:space-x-3">

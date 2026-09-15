@@ -51,7 +51,7 @@ export const SCHEDULE_CATEGORIES: Record<ScheduleCategory, CategoryDefinition> =
     name: 'Atendimento',
     description: 'Atendimentos com hora marcada na sala do instituto',
     durationRule: '60 a 90 minutos',
-    badgeLabel: 'Atendimento (60-90 min)',
+    badgeLabel: 'Atendimento',
     colorBg: 'bg-emerald-50',
     colorText: 'text-emerald-800',
     colorBorder: 'border-emerald-200',
@@ -75,6 +75,16 @@ export const SCHEDULE_CATEGORIES: Record<ScheduleCategory, CategoryDefinition> =
     colorBg: 'bg-purple-50',
     colorText: 'text-purple-800',
     colorBorder: 'border-purple-200',
+  },
+  comunicacao: {
+    id: 'comunicacao',
+    name: 'Comunicação',
+    description: 'Avisos, comunicados oficiais e informativos da equipe',
+    durationRule: 'Comunicado informativo',
+    badgeLabel: 'Comunicação',
+    colorBg: 'bg-blue-50',
+    colorText: 'text-blue-800',
+    colorBorder: 'border-blue-200',
   },
 };
 
@@ -108,9 +118,17 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
         badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
       };
     }
+    if (ev.category === 'comunicacao') {
+      return {
+        category: 'comunicacao',
+        label: 'Comunicação',
+        durationLabel: 'Informativo',
+        badgeClass: 'bg-blue-50 text-blue-800 border-blue-200 font-semibold',
+      };
+    }
     return {
       category: 'atendimento',
-      label: 'Atendimento (60-90 min)',
+      label: 'Atendimento',
       durationLabel: '60 a 90 min',
       badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
     };
@@ -170,7 +188,23 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
     };
   }
 
-  // 2. Check for Reunião
+  // 2. Check for Comunicação
+  if (
+    fullText.includes('comunicação') ||
+    fullText.includes('comunicacao') ||
+    fullText.includes('comunicado') ||
+    fullText.includes('aviso oficial') ||
+    fullText.includes('informativo')
+  ) {
+    return {
+      category: 'comunicacao',
+      label: 'Comunicação',
+      durationLabel: 'Informativo',
+      badgeClass: 'bg-blue-50 text-blue-800 border-blue-200 font-semibold',
+    };
+  }
+
+  // 3. Check for Reunião
   if (
     fullText.includes('reunião') ||
     fullText.includes('reuniao') ||
@@ -185,10 +219,10 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
     };
   }
 
-  // 3. Default to Atendimento (60 a 90 min)
+  // 4. Default to Atendimento
   return {
     category: 'atendimento',
-    label: 'Atendimento (60-90 min)',
+    label: 'Atendimento',
     durationLabel: '60 a 90 min',
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
   };

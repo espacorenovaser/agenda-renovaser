@@ -19,6 +19,7 @@ import {
   X,
   UserCheck,
   Check,
+  MessageSquare,
 } from 'lucide-react';
 import type { CalendarEvent, TimeSlot, ScheduleCategory, AppUser } from '../types';
 import {
@@ -309,7 +310,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
         </div>
 
-        {/* Right side controls: Professional Menu + Button to Open Chat + Refresh */}
+        {/* Right side controls: Professional Menu, Availability Toggle, Refresh */}
         <div className="flex items-center flex-wrap gap-2">
           {/* Menu de Profissionais */}
           {onSelectProfessional && (
@@ -320,26 +321,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               activeUser={activeUser || null}
             />
           )}
-
-          {/* Botão Principal: Registrar Horário na Agenda (Abre o Chat do Assistente) */}
-          <button
-            id="btn-open-register-chat"
-            type="button"
-            onClick={() => {
-              if (onOpenChat) {
-                onOpenChat();
-              } else {
-                onSelectSlotForAssistant(
-                  'Olá! Gostaria de registrar um novo horário na agenda do Instituto RenovaSer.'
-                );
-              }
-            }}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs hover:shadow-sm transition-all flex items-center space-x-2 cursor-pointer border border-emerald-800"
-            title="Abrir o assistente inteligente para registrar um novo atendimento ou reunião"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
-            <span>+ Registrar Horário</span>
-          </button>
 
           {/* Availability Toggle */}
           <button
@@ -424,7 +405,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
             }`}
           >
-            Atendimentos (60-90 min)
+            Atendimento
           </button>
           <button
             id="filter-cat-reuniao"
@@ -448,10 +429,41 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           >
             Eventos
           </button>
+          <button
+            id="filter-cat-comunicacao"
+            onClick={() => setCategoryFilter('comunicacao')}
+            className={`px-3 py-1 rounded-lg transition-colors cursor-pointer text-xs font-semibold border ${
+              categoryFilter === 'comunicacao'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                : 'bg-blue-50 text-blue-900 border-blue-200 hover:bg-blue-100'
+            }`}
+          >
+            Comunicações
+          </button>
         </div>
 
-        {/* Quick Schedule Triggers (Also opens the assistant chat) */}
-        <div className="relative flex items-center space-x-2">
+        {/* Action Buttons: Registrar Horário na frente à esquerda dos botões + Quick Schedule Triggers */}
+        <div className="relative flex flex-wrap items-center gap-2">
+          {/* Botão Principal: Registrar Horário na Agenda (Abre o Chat do Assistente) */}
+          <button
+            id="btn-open-register-chat"
+            type="button"
+            onClick={() => {
+              if (onOpenChat) {
+                onOpenChat();
+              } else {
+                onSelectSlotForAssistant(
+                  'Olá! Gostaria de registrar um novo horário na agenda do Instituto RenovaSer.'
+                );
+              }
+            }}
+            className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs hover:shadow-sm transition-all flex items-center space-x-1.5 cursor-pointer border border-emerald-800"
+            title="Abrir o assistente inteligente para registrar um novo atendimento, reunião ou evento"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+            <span>+ Registrar Horário</span>
+          </button>
+
           <button
             id="quick-add-atendimento"
             onClick={() => {
@@ -460,9 +472,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               );
             }}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 transition-colors cursor-pointer shadow-2xs"
-            title="Agendar Atendimento de 60 a 90 min"
+            title="Agendar Atendimento"
           >
-            + Atendimento (60-90m)
+            + Atendimento
           </button>
 
           <button
@@ -486,6 +498,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           >
             <span>+ Evento</span>
             <span className="text-[10px] opacity-70">▾</span>
+          </button>
+
+          {/* Novo Botão: + Comunicação */}
+          <button
+            id="quick-add-comunicacao"
+            onClick={() => {
+              onSelectSlotForAssistant(
+                'Gostaria de registrar uma Comunicação oficial para a equipe do Instituto RenovaSer.'
+              );
+            }}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-blue-700 border border-blue-200 hover:bg-blue-50 transition-colors cursor-pointer shadow-2xs flex items-center space-x-1"
+            title="Registrar Comunicação ou informativo oficial"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+            <span>+ Comunicação</span>
           </button>
 
           {/* Subtypes Popover */}

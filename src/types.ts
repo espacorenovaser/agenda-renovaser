@@ -1,4 +1,4 @@
-export type ScheduleCategory = 'atendimento' | 'reuniao' | 'evento';
+export type ScheduleCategory = 'atendimento' | 'reuniao' | 'evento' | 'comunicacao';
 
 export type EventSubtype = 'workshop' | 'treinamento' | 'formacao' | 'transmissao_online';
 
