@@ -618,22 +618,22 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col">
         {!user ? (
-          /* Sign-in Callout Hero when not logged in - Natural Tones Deep Sage */
-          <div className="mb-6 p-6 sm:p-8 rounded-2xl bg-[#455243] text-[#F7F5F0] border border-[#3A4538] shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+          /* Sign-in Callout Hero when not logged in - Clean Modern Emerald */
+          <div className="mb-6 p-6 sm:p-8 rounded-2xl bg-emerald-900 text-white border border-emerald-950 shadow-md flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="space-y-2.5">
-              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium bg-[#556553] text-[#E8EFE9] border border-[#657963]">
-                <Sparkles className="w-3.5 h-3.5 text-[#C4D9C2]" />
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-bold bg-emerald-800 text-emerald-100 border border-emerald-700">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
                 <span>Instituto RenovaSer • Agenda Interna Oficial</span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#FAF9F5]">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
                 Gestão integrada de atendimentos e eventos do instituto
               </h1>
-              <p className="text-sm text-[#D7E2D5] max-w-2xl leading-relaxed">
+              <p className="text-sm text-emerald-100 max-w-2xl leading-relaxed">
                 Conecte a conta do Google Agenda para sincronizar seus compromissos, verificar a disponibilidade da sala de atendimentos e agendar com hora marcada (60 a 90 min).
               </p>
               {isDemoMode && (
-                <div className="inline-flex items-center space-x-1.5 text-xs text-[#C4D9C2] bg-[#384436] px-2.5 py-1 rounded-lg border border-[#4F604D]">
-                  <Sparkles className="w-3.5 h-3.5 text-[#A5C7A2]" />
+                <div className="inline-flex items-center space-x-1.5 text-xs text-emerald-200 bg-emerald-950/70 px-3 py-1 rounded-xl border border-emerald-800">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
                   <span>Modo Demonstração ativo: agenda e assistente liberados para teste!</span>
                 </div>
               )}
@@ -644,7 +644,7 @@ export default function App() {
                 id="btn-hero-google-login"
                 onClick={handleLogin}
                 disabled={isLoggingIn}
-                className="w-full sm:w-auto px-5 py-3 rounded-xl bg-[#FAF9F5] text-[#2E3029] hover:bg-white font-medium text-sm shadow-xs transition-all flex items-center justify-center space-x-3 shrink-0 disabled:opacity-60 cursor-pointer border border-[#DCD8CD]"
+                className="w-full sm:w-auto px-5 py-3 rounded-xl bg-white text-slate-900 hover:bg-slate-50 font-bold text-sm shadow-xs transition-all flex items-center justify-center space-x-3 shrink-0 disabled:opacity-60 cursor-pointer border border-slate-200"
               >
                 <svg className="w-5 h-5" viewBox="0 0 48 48">
                   <path
@@ -673,7 +673,7 @@ export default function App() {
                   href={typeof window !== 'undefined' ? window.location.href : '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[#556553] hover:bg-[#60735E] text-white font-medium text-xs sm:text-sm shadow-xs transition-all flex items-center justify-center space-x-2 border border-[#6B8068] cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-3 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center justify-center space-x-2 border border-emerald-700 cursor-pointer"
                   title="Abrir em Nova Aba para conectar com Google sem restrições de pop-up do iframe"
                 >
                   <ExternalLink className="w-4 h-4" />
@@ -692,7 +692,7 @@ export default function App() {
                     isIframe: isInIframe,
                   })
                 }
-                className="p-3 rounded-xl bg-transparent hover:bg-[#556553]/60 text-[#D7E2D5] hover:text-white transition-colors flex items-center justify-center cursor-pointer"
+                className="p-3 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-emerald-100 hover:text-white transition-colors flex items-center justify-center cursor-pointer border border-emerald-700"
                 title="Ajuda sobre a conexão"
               >
                 <HelpCircle className="w-5 h-5" />
@@ -735,15 +735,15 @@ export default function App() {
             id="fab-register-schedule"
             type="button"
             onClick={() => setIsChatOpen(true)}
-            className="fixed bottom-6 right-6 z-30 px-4 py-3 rounded-2xl bg-[#455243] hover:bg-[#384436] text-[#F7F5F0] shadow-xl hover:shadow-2xl border border-[#384436] flex items-center space-x-3 transition-all cursor-pointer group"
+            className="fixed bottom-6 right-6 z-30 px-4 py-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white shadow-xl hover:shadow-2xl border border-emerald-800 flex items-center space-x-3 transition-all cursor-pointer group"
             title="Clique para registrar horário na agenda com o assistente inteligente"
           >
-            <div className="w-8 h-8 rounded-xl bg-[#556553] flex items-center justify-center text-[#C4D9C2] shadow-2xs group-hover:scale-110 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-emerald-800 text-emerald-200 flex items-center justify-center shadow-2xs group-hover:scale-110 transition-transform">
               <Sparkles className="w-4 h-4" />
             </div>
             <div className="text-left">
               <div className="text-xs font-bold leading-tight">Registrar Horário</div>
-              <div className="text-[10px] text-[#C4D9C2] leading-tight">Assistente da Agenda</div>
+              <div className="text-[10px] text-emerald-200 leading-tight">Assistente da Agenda</div>
             </div>
           </button>
         )}
@@ -754,29 +754,29 @@ export default function App() {
         <div className="fixed inset-0 z-50 overflow-hidden animate-in fade-in duration-200">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-[#2E3029]/50 backdrop-blur-xs transition-opacity cursor-pointer"
+            className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity cursor-pointer"
             onClick={() => setIsChatOpen(false)}
             title="Clique para fechar o assistente e voltar para a agenda"
           />
 
           <div className="fixed inset-y-0 right-0 max-w-full flex pl-3 sm:pl-10">
-            <div className="w-screen max-w-2xl bg-[#FAF9F5] shadow-2xl border-l border-[#E2DFD4] flex flex-col animate-in slide-in-from-right duration-250">
+            <div className="w-screen max-w-2xl bg-white shadow-2xl border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-250">
               {/* Drawer Header */}
-              <div className="px-5 py-4 bg-white border-b border-[#E2DFD4] flex items-center justify-between shrink-0 shadow-2xs">
+              <div className="px-5 py-4 bg-white border-b border-slate-100 flex items-center justify-between shrink-0 shadow-2xs">
                 <div className="flex items-center space-x-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#455243] text-white flex items-center justify-center shadow-xs">
-                    <Sparkles className="w-5 h-5 text-[#C4D9C2]" />
+                  <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs">
+                    <Sparkles className="w-5 h-5 text-emerald-200" />
                   </div>
                   <div>
                     <div className="flex items-center space-x-2">
-                      <h3 className="text-sm font-bold text-[#2E3029]">
+                      <h3 className="text-sm font-bold text-slate-900">
                         Assistente de Agendamento
                       </h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#EBF0E9] text-[#3D5A3F] border border-[#C2D6C0] font-medium">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
                         Instituto RenovaSer
                       </span>
                     </div>
-                    <p className="text-xs text-[#76766D]">
+                    <p className="text-xs text-slate-500">
                       Conectado como: <strong>{activeUser?.name || 'Administrador'}</strong> (
                       {activeUser?.role === 'admin'
                         ? 'Acesso Total'
@@ -791,17 +791,17 @@ export default function App() {
                     id="btn-close-assistant-drawer"
                     type="button"
                     onClick={() => setIsChatOpen(false)}
-                    className="p-2 rounded-xl text-[#76766D] hover:text-[#2E3029] hover:bg-[#EDEBE1] transition-colors cursor-pointer flex items-center space-x-1"
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer flex items-center space-x-1"
                     title="Fechar Assistente e voltar para a agenda"
                   >
                     <X className="w-5 h-5" />
-                    <span className="text-xs font-medium hidden sm:inline">Fechar</span>
+                    <span className="text-xs font-bold hidden sm:inline">Fechar</span>
                   </button>
                 </div>
               </div>
 
               {/* Drawer Body: ChatAssistant */}
-              <div className="flex-1 overflow-hidden p-3 sm:p-5 flex flex-col">
+              <div className="flex-1 overflow-hidden p-3 sm:p-5 flex flex-col bg-slate-50/50">
                 <ChatAssistant
                   messages={messages}
                   isLoading={isChatLoading}

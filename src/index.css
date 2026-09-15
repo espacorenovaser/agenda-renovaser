@@ -3,13 +3,13 @@
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background-color: #F7F5F0;
-    color: #4A4A43;
+    background-color: #F8FAFC;
+    color: #0F172A;
     -webkit-font-smoothing: antialiased;
   }
 }
 
-/* Custom subtle scrollbar for Natural Tones */
+/* Custom subtle clean scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -18,9 +18,9 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #D8D4C8;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #8C9484;
+  background: #94A3B8;
 }

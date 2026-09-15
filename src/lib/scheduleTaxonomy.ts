@@ -52,9 +52,9 @@ export const SCHEDULE_CATEGORIES: Record<ScheduleCategory, CategoryDefinition> =
     description: 'Atendimentos com hora marcada na sala do instituto',
     durationRule: '60 a 90 minutos',
     badgeLabel: 'Atendimento (60-90 min)',
-    colorBg: 'bg-[#EBF0E9]',
-    colorText: 'text-[#3D5A3F]',
-    colorBorder: 'border-[#C2D6C0]',
+    colorBg: 'bg-emerald-50',
+    colorText: 'text-emerald-800',
+    colorBorder: 'border-emerald-200',
   },
   reuniao: {
     id: 'reuniao',
@@ -62,9 +62,9 @@ export const SCHEDULE_CATEGORIES: Record<ScheduleCategory, CategoryDefinition> =
     description: 'Alinhamentos de equipe, diretoria ou parceiros',
     durationRule: 'Tempo definido conforme necessidade',
     badgeLabel: 'Reunião',
-    colorBg: 'bg-[#FDF6E2]',
-    colorText: 'text-[#8C6D23]',
-    colorBorder: 'border-[#E8D9A8]',
+    colorBg: 'bg-amber-50',
+    colorText: 'text-amber-800',
+    colorBorder: 'border-amber-200',
   },
   evento: {
     id: 'evento',
@@ -72,9 +72,9 @@ export const SCHEDULE_CATEGORIES: Record<ScheduleCategory, CategoryDefinition> =
     description: 'Workshops, treinamentos, formações e transmissões do instituto',
     durationRule: 'Conforme programação do evento',
     badgeLabel: 'Evento',
-    colorBg: 'bg-[#F2EEFA]',
-    colorText: 'text-[#6B4B9A]',
-    colorBorder: 'border-[#D8CEEE]',
+    colorBg: 'bg-purple-50',
+    colorText: 'text-purple-800',
+    colorBorder: 'border-purple-200',
   },
 };
 
@@ -97,7 +97,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
         eventSubtype: sub,
         label: subInfo ? `Evento • ${subInfo.name}` : 'Evento',
         durationLabel: 'Conforme programação',
-        badgeClass: 'bg-[#F2EEFA] text-[#6B4B9A] border-[#D8CEEE]',
+        badgeClass: 'bg-purple-50 text-purple-800 border-purple-200 font-semibold',
       };
     }
     if (ev.category === 'reuniao') {
@@ -105,14 +105,14 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
         category: 'reuniao',
         label: 'Reunião',
         durationLabel: 'Tempo conforme necessidade',
-        badgeClass: 'bg-[#FDF6E2] text-[#8C6D23] border-[#E8D9A8]',
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
       };
     }
     return {
       category: 'atendimento',
-      label: 'Atendimento (60 a 90 min)',
+      label: 'Atendimento (60-90 min)',
       durationLabel: '60 a 90 min',
-      badgeClass: 'bg-[#EBF0E9] text-[#3D5A3F] border-[#C2D6C0]',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
     };
   }
 
@@ -126,7 +126,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
       eventSubtype: 'workshop',
       label: 'Evento • Workshop',
       durationLabel: 'Conforme programação',
-      badgeClass: 'bg-[#F2EEFA] text-[#6B4B9A] border-[#D8CEEE]',
+      badgeClass: 'bg-purple-50 text-purple-800 border-purple-200 font-semibold',
     };
   }
   if (fullText.includes('treinamento')) {
@@ -135,7 +135,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
       eventSubtype: 'treinamento',
       label: 'Evento • Treinamento',
       durationLabel: 'Conforme programação',
-      badgeClass: 'bg-[#F2EEFA] text-[#6B4B9A] border-[#D8CEEE]',
+      badgeClass: 'bg-purple-50 text-purple-800 border-purple-200 font-semibold',
     };
   }
   if (fullText.includes('formação') || fullText.includes('formacao')) {
@@ -144,7 +144,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
       eventSubtype: 'formacao',
       label: 'Evento • Formação',
       durationLabel: 'Conforme programação',
-      badgeClass: 'bg-[#F2EEFA] text-[#6B4B9A] border-[#D8CEEE]',
+      badgeClass: 'bg-purple-50 text-purple-800 border-purple-200 font-semibold',
     };
   }
   if (
@@ -158,7 +158,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
       eventSubtype: 'transmissao_online',
       label: 'Evento • Transmissão on-line',
       durationLabel: 'Conforme programação',
-      badgeClass: 'bg-[#F2EEFA] text-[#6B4B9A] border-[#D8CEEE]',
+      badgeClass: 'bg-sky-50 text-sky-800 border-sky-200 font-semibold',
     };
   }
   if (fullText.includes('[evento]') || ev.isInstitutionalEvent) {
@@ -166,7 +166,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
       category: 'evento',
       label: 'Evento Institucional',
       durationLabel: 'Conforme programação',
-      badgeClass: 'bg-[#F2EEFA] text-[#6B4B9A] border-[#D8CEEE]',
+      badgeClass: 'bg-purple-50 text-purple-800 border-purple-200 font-semibold',
     };
   }
 
@@ -181,15 +181,15 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
       category: 'reuniao',
       label: 'Reunião',
       durationLabel: 'Tempo conforme necessidade',
-      badgeClass: 'bg-[#FDF6E2] text-[#8C6D23] border-[#E8D9A8]',
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
     };
   }
 
   // 3. Default to Atendimento (60 a 90 min)
   return {
     category: 'atendimento',
-    label: 'Atendimento (60 a 90 min)',
+    label: 'Atendimento (60-90 min)',
     durationLabel: '60 a 90 min',
-    badgeClass: 'bg-[#EBF0E9] text-[#3D5A3F] border-[#C2D6C0]',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
   };
 }

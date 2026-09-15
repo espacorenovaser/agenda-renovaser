@@ -1,25 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Calendar,
   Clock,
-  CheckCircle2,
-  AlertCircle,
   LogOut,
   History,
-  ShieldCheck,
-  Briefcase,
-  Shield,
-  UserCheck,
+  CheckCircle2,
+  AlertCircle,
   ExternalLink,
   HelpCircle,
+  Briefcase,
+  Shield,
   Sparkles,
 } from 'lucide-react';
-import type { User } from 'firebase/auth';
-import type { AppUser } from '../types';
+import type { UserProfile, AppUser } from '../types';
 import { SAO_PAULO_TZ } from '../lib/dateUtils';
 
 interface NavbarProps {
-  user: User | null;
+  user: UserProfile | null;
   onLogin: () => void;
   onLogout: () => void;
   isLoggingIn: boolean;
@@ -65,24 +62,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   return (
-    <header id="app-navbar" className="bg-[#FAF9F5] border-b border-[#E2DFD4] sticky top-0 z-30 shadow-2xs">
+    <header id="app-navbar" className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Brand Identity */}
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-[#5C6B5A] flex items-center justify-center text-white shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white shadow-xs">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-bold text-[#2E3029] text-base sm:text-lg tracking-tight">
+                <span className="font-bold text-slate-900 text-base sm:text-lg tracking-tight">
                   Instituto RenovaSer
                 </span>
-                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#EBF0E9] text-[#4F6F52] border border-[#C5D8C3]">
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   Agenda Interna
                 </span>
               </div>
-              <p className="text-xs text-[#76766D] hidden sm:block">
+              <p className="text-xs text-slate-500 hidden sm:block">
                 Atendimentos com hora marcada, eventos gerais e comunicação oficial
               </p>
             </div>
@@ -91,10 +88,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Timezone & Controls */}
           <div className="flex items-center space-x-3">
             {/* SP Time Badge */}
-            <div className="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-[#EDEBE1] text-[#4A4A43] text-xs font-mono border border-[#DCD8CD]">
-              <Clock className="w-3.5 h-3.5 text-[#5C6B5A]" />
+            <div className="hidden lg:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-mono border border-slate-200">
+              <Clock className="w-3.5 h-3.5 text-emerald-700" />
               <span>SP: {currentTime || '--:--:--'}</span>
-              <span className="text-[#8C8C80]">(GMT-3)</span>
+              <span className="text-slate-400">(GMT-3)</span>
             </div>
 
             {/* RenovaSer User Badge & Switcher */}
@@ -102,18 +99,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onOpenAuthModal}
-                className="flex items-center space-x-2 px-3 py-1.5 rounded-xl border border-[#DCD8CD] bg-white hover:bg-[#FAF9F5] text-xs font-medium text-[#2E3029] shadow-2xs transition-colors cursor-pointer"
+                className="flex items-center space-x-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-800 shadow-2xs transition-colors cursor-pointer"
                 title="Trocar usuário ou cadastrar profissional"
               >
                 {activeUser?.role === 'admin' ? (
-                  <Shield className="w-4 h-4 text-[#5C6B5A]" />
+                  <Shield className="w-4 h-4 text-emerald-700" />
                 ) : (
-                  <Briefcase className="w-4 h-4 text-[#9B7030]" />
+                  <Briefcase className="w-4 h-4 text-amber-600" />
                 )}
                 <div className="text-left">
-                  <div className="leading-tight font-semibold flex items-center space-x-1">
+                  <div className="leading-tight font-bold flex items-center space-x-1 text-slate-900">
                     <span>{activeUser ? activeUser.name : 'Identificar-se'}</span>
-                    <span className="text-[10px] text-[#76766D]">
+                    <span className="text-[10px] text-slate-500 font-normal">
                       ({activeUser?.role === 'admin' ? 'Admin' : activeUser?.specialty || 'Profissional'})
                     </span>
                   </div>
@@ -127,10 +124,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id="nav-btn-open-chat"
                 type="button"
                 onClick={onOpenChat}
-                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#455243] hover:bg-[#384436] text-[#F7F5F0] text-xs font-semibold shadow-2xs transition-all cursor-pointer border border-[#384436]"
+                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer border border-emerald-800"
                 title="Registrar horário na agenda com o assistente"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#C4D9C2]" />
+                <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
                 <span>+ Registrar Horário</span>
               </button>
             )}
@@ -140,10 +137,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {/* Calendar Status */}
                 {calendarConnected ? (
                   <div
-                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-[#EBF0E9] text-[#4F6F52] border-[#C5D8C3]"
+                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-emerald-50 text-emerald-800 border-emerald-200"
                     title="Conectado com sucesso ao Google Agenda"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#4F6F52]" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
                     <span className="hidden xl:inline">Agenda Conectada</span>
                   </div>
                 ) : (
@@ -151,10 +148,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     id="btn-reconnect-agenda"
                     onClick={onLogin}
                     disabled={isLoggingIn}
-                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-[#FBF8EF] hover:bg-[#F3ECD5] text-[#9B7030] border-[#E0D5B5] transition-colors cursor-pointer shadow-2xs"
+                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-bold border bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200 transition-colors cursor-pointer shadow-2xs"
                     title="Sessão expirada. Clique para reconectar a conta Google Agenda"
                   >
-                    <AlertCircle className="w-3.5 h-3.5 text-[#9B7030]" />
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
                     <span>{isLoggingIn ? 'Conectando...' : 'Reconectar Agenda'}</span>
                   </button>
                 )}
@@ -163,37 +160,37 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   id="btn-open-history"
                   onClick={onOpenHistory}
-                  className="p-2 text-[#5C6B5A] hover:text-[#2E3029] hover:bg-[#EDEBE1] rounded-lg transition-colors cursor-pointer"
+                  className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   title="Histórico de Ações"
                 >
                   <History className="w-4 h-4" />
                 </button>
 
                 {/* User Info */}
-                <div className="flex items-center space-x-2 pl-2 border-l border-[#E2DFD4]">
+                <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
                   {user.photoURL ? (
                     <img
                       src={user.photoURL}
                       alt={user.displayName || 'Usuário'}
                       referrerPolicy="no-referrer"
-                      className="w-8 h-8 rounded-full border border-[#DCD8CD]"
+                      className="w-8 h-8 rounded-full border border-slate-200"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-[#EDEBE1] text-[#5C6B5A] font-semibold text-xs flex items-center justify-center border border-[#DCD8CD]">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 text-emerald-800 font-bold text-xs flex items-center justify-center border border-slate-200">
                       {(user.displayName || user.email || 'U')[0].toUpperCase()}
                     </div>
                   )}
                   <div className="hidden 2xl:block text-left text-xs">
-                    <p className="font-medium text-[#2E3029] leading-tight truncate max-w-[120px]">
+                    <p className="font-bold text-slate-900 leading-tight truncate max-w-[120px]">
                       {user.displayName || 'Google Account'}
                     </p>
-                    <p className="text-[#76766D] leading-tight truncate max-w-[120px]">{user.email}</p>
+                    <p className="text-slate-500 leading-tight truncate max-w-[120px]">{user.email}</p>
                   </div>
 
                   <button
                     id="btn-logout"
                     onClick={onLogout}
-                    className="p-1.5 text-[#76766D] hover:text-[#A25852] hover:bg-[#F9EFEF] rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                     title="Desconectar Google"
                   >
                     <LogOut className="w-4 h-4" />
@@ -207,7 +204,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   id="btn-google-login"
                   onClick={onLogin}
                   disabled={isLoggingIn}
-                  className="inline-flex items-center space-x-2 px-3.5 py-1.5 border border-[#E2DFD4] rounded-lg bg-white text-[#4A4A43] hover:bg-[#FAF9F5] text-xs sm:text-sm font-medium shadow-xs transition-all disabled:opacity-60 cursor-pointer"
+                  className="inline-flex items-center space-x-2 px-3.5 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-800 hover:bg-slate-50 text-xs sm:text-sm font-semibold shadow-xs transition-all disabled:opacity-60 cursor-pointer"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 48 48">
                     <path
@@ -237,7 +234,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     target="_blank"
                     rel="noopener noreferrer"
                     title="Abrir em Nova Aba (sem restrições de pop-up do iframe)"
-                    className="p-1.5 border border-[#E2DFD4] rounded-lg bg-white text-[#5C6B5A] hover:bg-[#FAF9F5] hover:text-[#2E3029] transition-colors flex items-center justify-center cursor-pointer shadow-xs"
+                    className="p-1.5 border border-slate-200 rounded-xl bg-white text-emerald-800 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer shadow-xs"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
@@ -248,7 +245,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     type="button"
                     onClick={onOpenAuthHelp}
                     title="Ajuda sobre conexão com Google Agenda"
-                    className="p-1.5 text-[#76766D] hover:text-[#2E3029] hover:bg-[#EDEBE1] rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                   >
                     <HelpCircle className="w-4 h-4" />
                   </button>
