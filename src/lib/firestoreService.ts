@@ -8,6 +8,7 @@ import {
   orderBy,
   limit,
   getDocs,
+  deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
@@ -116,6 +117,29 @@ export function subscribeToMessages(userId: string, callback: (msgs: ChatMessage
       if (onError) onError(error);
     }
   );
+}
+
+export async function clearChatMessages(userId: string): Promise<void> {
+  const path = `users/${userId}/chat_messages`;
+  try {
+    const colRef = collection(db, 'users', userId, 'chat_messages');
+    const snap = await getDocs(colRef);
+    const deletePromises = snap.docs.map((d) => {
+      const docRef = doc(db, 'users', userId, 'chat_messages', d.id);
+      return deleteDoc(docRef);
+    });
+    await Promise.all(deletePromises);
+  } catch (err: any) {
+    const isPerm =
+      err?.code === 'permission-denied' ||
+      err?.message?.includes('permission-denied') ||
+      err?.message?.includes('Missing or insufficient permissions');
+
+    if (isPerm) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+    console.warn('Could not clear chat messages from Firestore (offline/transient):', err?.message || err);
+  }
 }
 
 export async function logMeetingAction(userId: string, log: Omit<MeetingAuditLog, 'id' | 'userId' | 'createdAt'>): Promise<string | undefined> {

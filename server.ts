@@ -146,7 +146,7 @@ app.post(['/api/calendar/execute-update', '/calendar/execute-update'], async (re
   }
 });
 
-// Helper: generateContent with retry, exponential backoff, and fast gemini-3.6-flash model
+// Helper: generateContent with resilient multi-model fallback and retry
 async function generateContentWithRetry(
   ai: GoogleGenAI,
   params: {
@@ -156,8 +156,14 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  // gemini-3.6-flash is tested, highly responsive (<3s) and prevents serverless function timeouts
-  const candidateModels = ['gemini-3.6-flash'];
+  // Ordered by speed and responsiveness: gemini-3.5-flash-lite, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.8-flash, gemini-3.6-flash
+  const candidateModels = [
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash',
+  ];
   let lastError: any = null;
 
   for (const model of candidateModels) {
@@ -185,11 +191,12 @@ async function generateContentWithRetry(
           msg.includes('fetch failed');
 
         if (!isTransient) {
-          throw err;
+          // If it's a 404 or other non-transient model issue, break to next candidate model
+          break;
         }
 
-        console.warn(`[Gemini API] Model ${model} attempt ${attempt + 1} transient error: ${msg}. Retrying...`);
-        const delay = (attempt + 1) * 1000;
+        console.warn(`[Gemini API] Model ${model} attempt ${attempt + 1} transient error: ${msg}. Trying next or retrying...`);
+        const delay = (attempt + 1) * 800;
         await new Promise((res) => setTimeout(res, delay));
       }
     }
@@ -246,8 +253,8 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
           },
           category: {
             type: Type.STRING,
-            description: 'Categoria do que está sendo agendado: "atendimento" (60 a 90 minutos), "reuniao" (tempo definido conforme necessidade) ou "evento" (Workshops, Treinamentos, Formações, Transmissões on-line)',
-            enum: ['atendimento', 'reuniao', 'evento'],
+            description: 'Categoria do que está sendo agendado: "atendimento" (60 a 90 minutos), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
+            enum: ['atendimento', 'reuniao', 'evento', 'comunicacao'],
           },
           eventSubtype: {
             type: Type.STRING,
@@ -646,6 +653,10 @@ TOM:
             if (!formattedTitle.toLowerCase().includes(subName.toLowerCase())) {
               formattedTitle = `[Evento: ${subName}] ${formattedTitle}`;
             }
+          } else if (category === 'comunicacao') {
+            if (!formattedTitle.toLowerCase().includes('comunicado') && !formattedTitle.toLowerCase().includes('comunicação')) {
+              formattedTitle = `[Comunicação] ${formattedTitle}`;
+            }
           }
 
           const reqStartMs = new Date(callArgs.startDateTime).getTime();
@@ -697,6 +708,8 @@ TOM:
               ? 'Modalidade: Atendimento (60 a 90 minutos)'
               : category === 'reuniao'
               ? 'Modalidade: Reunião (Tempo definido conforme necessidade)'
+              : category === 'comunicacao'
+              ? 'Modalidade: Comunicação Oficial da Equipe'
               : `Modalidade: Evento - ${
                   subtype === 'workshop'
                     ? 'Workshop'

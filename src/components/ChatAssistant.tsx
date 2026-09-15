@@ -20,6 +20,7 @@ import {
   Shield,
   Briefcase,
   Tag,
+  Trash2,
 } from 'lucide-react';
 import type { ChatMessage, PendingAction, AppUser } from '../types';
 import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
@@ -28,6 +29,7 @@ interface ChatAssistantProps {
   messages: ChatMessage[];
   isLoading: boolean;
   onSendMessage: (text: string) => Promise<void>;
+  onClearChat?: () => void;
   onConfirmPendingAction: (action: PendingAction) => Promise<void>;
   prefilledInput: string;
   setPrefilledInput: (val: string) => void;
@@ -41,6 +43,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   messages,
   isLoading,
   onSendMessage,
+  onClearChat,
   onConfirmPendingAction,
   prefilledInput,
   setPrefilledInput,
@@ -51,6 +54,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 }) => {
   const [inputText, setInputText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -68,11 +72,23 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  // Auto-resize textarea to provide generous, comfortable composition space
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.max(85, Math.min(scrollHeight, 260))}px`;
+    }
+  }, [inputText]);
+
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim() || isLoading) return;
     const text = inputText;
     setInputText('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '85px';
+    }
     onSendMessage(text);
   };
 
@@ -89,15 +105,6 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  const sampleSuggestions = [
-    'Agendar atendimento amanhã às 14h (60 min)',
-    'Agendar atendimento de 90 min na sala',
-    'Agendar reunião de alinhamento com a equipe',
-    'Agendar evento Workshop para sábado às 14h',
-    'Agendar transmissão on-line com link do Meet',
-    'Quais são os horários livres na sala esta semana?',
-  ];
-
   const handleQuickSchedulePrompt = (category: string) => {
     let prompt = '';
     if (category === 'atendimento_60') {
@@ -106,6 +113,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
       prompt = 'Gostaria de agendar um atendimento de 90 minutos na sala do Instituto RenovaSer.';
     } else if (category === 'reuniao') {
       prompt = 'Gostaria de agendar uma reunião de alinhamento com a equipe no Instituto RenovaSer.';
+    } else if (category === 'comunicacao') {
+      prompt = 'Gostaria de registrar uma comunicação/aviso oficial para a equipe do Instituto RenovaSer.';
     } else if (category === 'workshop') {
       prompt = 'Gostaria de cadastrar um evento do tipo Workshop no Instituto RenovaSer.';
     } else if (category === 'treinamento') {
@@ -149,6 +158,43 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         </div>
 
         <div className="flex items-center space-x-2">
+          {onClearChat && (
+            showClearConfirm ? (
+              <div className="flex items-center space-x-1.5 bg-rose-50 border border-rose-200 px-2 py-1 rounded-lg animate-in fade-in duration-150">
+                <span className="text-[11px] text-rose-700 font-medium">Limpar tudo?</span>
+                <button
+                  id="btn-confirm-clear-chat"
+                  type="button"
+                  onClick={() => {
+                    setShowClearConfirm(false);
+                    onClearChat();
+                  }}
+                  className="text-[11px] px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded transition-colors cursor-pointer"
+                >
+                  Sim
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowClearConfirm(false)}
+                  className="text-[11px] px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold rounded transition-colors cursor-pointer"
+                >
+                  Não
+                </button>
+              </div>
+            ) : (
+              <button
+                id="btn-open-clear-chat"
+                type="button"
+                onClick={() => setShowClearConfirm(true)}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-700 font-medium transition-colors cursor-pointer flex items-center space-x-1 shadow-2xs"
+                title="Limpar o histórico de conversas do assistente"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Limpar Chat</span>
+              </button>
+            )
+          )}
+
           {onOpenAuthModal && (
             <button
               type="button"
@@ -412,28 +458,6 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Prompts Bar */}
-      {messages.length <= 2 && (
-        <div className="px-4 py-2.5 border-t border-slate-100 bg-white">
-          <p className="text-[11px] text-slate-500 font-bold mb-1.5 flex items-center space-x-1">
-            <Sparkles className="w-3 h-3 text-amber-500" />
-            <span>Sugestões rápidas:</span>
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {sampleSuggestions.map((sug, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => onSendMessage(sug)}
-                className="text-[11px] px-2.5 py-1 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-900 rounded-lg border border-slate-200 hover:border-emerald-300 transition-colors text-left cursor-pointer"
-              >
-                {sug}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Session Expired Prompt Banner */}
       {isTokenExpired && onReconnect && (
         <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-200 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
@@ -486,6 +510,14 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => handleQuickSchedulePrompt('comunicacao')}
+            className="px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 font-bold transition-colors shrink-0 cursor-pointer"
+            title="Registrar comunicação ou aviso oficial"
+          >
+            + Comunicação
+          </button>
+          <button
+            type="button"
             onClick={() => handleQuickSchedulePrompt('workshop')}
             className="px-2 py-0.5 rounded-md bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold transition-colors shrink-0 cursor-pointer"
             title="Evento: Workshop"
@@ -518,18 +550,17 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex items-end space-x-2">
+        <form onSubmit={handleSubmit} className="flex items-end space-x-2.5">
           <div className="relative flex-1">
             <textarea
               id="input-chat-message"
               ref={textareaRef}
-              rows={1}
+              rows={3}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ex: 'Agendar atendimento amanhã às 14h com Dra. Priscila'..."
-              className="w-full resize-none px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 transition-all placeholder:text-slate-400"
-              style={{ maxHeight: '120px' }}
+              placeholder="Digite aqui sua solicitação (ex: 'Gostaria de agendar um Evento do tipo Formação no Instituto RenovaSer. Data e horário sugeridos: próximo sábado das 09:00 às 18:00')..."
+              className="w-full resize-y min-h-[95px] max-h-[260px] p-3.5 text-sm bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 transition-all placeholder:text-slate-400 leading-relaxed shadow-2xs"
             />
           </div>
 
@@ -537,10 +568,10 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             id="btn-send-message"
             type="submit"
             disabled={!inputText.trim() || isLoading}
-            className="p-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 text-white disabled:text-slate-400 transition-colors shrink-0 cursor-pointer disabled:cursor-not-allowed shadow-xs"
+            className="p-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-200 text-white disabled:text-slate-400 transition-colors shrink-0 cursor-pointer disabled:cursor-not-allowed shadow-xs flex items-center justify-center self-end"
             title="Enviar mensagem (Enter)"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-5 h-5" />
           </button>
         </form>
         <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 mt-1">

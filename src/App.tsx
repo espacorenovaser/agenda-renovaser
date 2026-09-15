@@ -24,6 +24,7 @@ import {
   syncUserProfile,
   saveChatMessage,
   subscribeToMessages,
+  clearChatMessages,
   logMeetingAction,
   getRecentMeetingLogs,
 } from './lib/firestoreService';
@@ -354,16 +355,22 @@ export default function App() {
       });
 
       if (!res.ok) {
-        let errMsg = 'Erro ao processar mensagem.';
+        let errMsg = '';
         try {
           const errorData = await res.json();
-          errMsg = errorData.error || errorData.text || errMsg;
+          errMsg = errorData.error || errorData.text || '';
         } catch {
+          // JSON parse failed
+        }
+
+        if (!errMsg) {
           const rawText = await res.text().catch(() => '');
-          if (res.status === 500 || res.status === 504) {
-            errMsg = `Falha de resposta do servidor (${res.status}). Se a aplicação estiver rodando na Vercel, verifique se a variável GEMINI_API_KEY foi adicionada nas configurações do projeto (Environment Variables).`;
+          if (rawText && rawText.length < 200 && !rawText.includes('<!DOCTYPE')) {
+            errMsg = rawText;
+          } else if (res.status === 503) {
+            errMsg = 'O serviço de inteligência artificial está com alta demanda momentânea nos servidores da Google. Por favor, tente novamente em alguns instantes.';
           } else {
-            errMsg = rawText?.slice(0, 150) || `Falha do servidor (${res.status}): ${res.statusText || 'Erro na requisição'}`;
+            errMsg = `Falha de resposta do servidor (${res.status}): ${res.statusText || 'Erro temporário na comunicação'}. Por favor, tente novamente.`;
           }
         }
         throw new Error(errMsg);
@@ -474,6 +481,28 @@ export default function App() {
       setMessages((prev) => [...prev, errMsg]);
     } finally {
       setIsChatLoading(false);
+    }
+  };
+
+  // Clear chat conversation history
+  const handleClearChat = async () => {
+    const welcomeMsg: ChatMessage = {
+      id: 'welcome-' + Date.now(),
+      role: 'assistant',
+      content: user
+        ? `Olá, ${user.displayName || activeUser?.name || 'colega'}! Sou a Agenda Interna do Instituto RenovaSer.\n\nO histórico do chat foi limpo. O que deseja agendar?\n• **Atendimentos**: 60 a 90 minutos com hora marcada\n• **Reunião**: tempo flexível conforme necessidade\n• **Eventos**: Workshop, Treinamento, Formação ou Transmissão on-line\n• **Comunicação**: informe ou aviso oficial da equipe`
+        : 'Olá! Sou a Agenda Interna do Instituto RenovaSer.\n\nO histórico do chat foi limpo. Em que posso ajudar você hoje?',
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages([welcomeMsg]);
+
+    if (user) {
+      try {
+        await clearChatMessages(user.uid);
+      } catch (e) {
+        console.warn('Erro ao limpar mensagens no Firestore:', e);
+      }
     }
   };
 
@@ -806,6 +835,7 @@ export default function App() {
                   messages={messages}
                   isLoading={isChatLoading}
                   onSendMessage={handleSendMessage}
+                  onClearChat={handleClearChat}
                   onConfirmPendingAction={(action) => {
                     setActivePendingAction(action);
                   }}
