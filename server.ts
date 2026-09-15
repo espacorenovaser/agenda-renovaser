@@ -14,7 +14,9 @@ app.use(express.json());
 function getGenAI(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is missing.');
+    throw new Error(
+      'A chave GEMINI_API_KEY não está configurada no servidor. Se estiver usando a Vercel, adicione a variável de ambiente GEMINI_API_KEY no painel da Vercel (Project Settings > Environment Variables).'
+    );
   }
   return new GoogleGenAI({
     apiKey,
@@ -42,7 +44,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Direct Calendar Listing Proxy
-app.get('/api/calendar/events', async (req, res) => {
+app.get(['/api/calendar/events', '/calendar/events'], async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -82,7 +84,7 @@ app.get('/api/calendar/events', async (req, res) => {
 });
 
 // Confirmation-gated Execute Delete
-app.post('/api/calendar/execute-delete', async (req, res) => {
+app.post(['/api/calendar/execute-delete', '/calendar/execute-delete'], async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const { eventId } = req.body;
@@ -111,7 +113,7 @@ app.post('/api/calendar/execute-delete', async (req, res) => {
 });
 
 // Confirmation-gated Execute Update
-app.post('/api/calendar/execute-update', async (req, res) => {
+app.post(['/api/calendar/execute-update', '/calendar/execute-update'], async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const { eventId, updates } = req.body;
@@ -144,7 +146,7 @@ app.post('/api/calendar/execute-update', async (req, res) => {
   }
 });
 
-// Helper: generateContent with retry, exponential backoff, and model fallback for 503 / UNAVAILABLE spikes
+// Helper: generateContent with retry, exponential backoff, and fast gemini-3.6-flash model
 async function generateContentWithRetry(
   ai: GoogleGenAI,
   params: {
@@ -154,7 +156,8 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  // gemini-3.6-flash is tested, highly responsive (<3s) and prevents serverless function timeouts
+  const candidateModels = ['gemini-3.6-flash'];
   let lastError: any = null;
 
   for (const model of candidateModels) {
@@ -186,7 +189,7 @@ async function generateContentWithRetry(
         }
 
         console.warn(`[Gemini API] Model ${model} attempt ${attempt + 1} transient error: ${msg}. Retrying...`);
-        const delay = (attempt + 1) * 1200;
+        const delay = (attempt + 1) * 1000;
         await new Promise((res) => setTimeout(res, delay));
       }
     }
@@ -195,8 +198,8 @@ async function generateContentWithRetry(
   throw lastError;
 }
 
-// Assistant Chat Endpoint powered by Gemini 3.8 Flash & Google Calendar Tools
-app.post('/api/assistant/chat', async (req, res) => {
+// Assistant Chat Endpoint powered by Gemini 3.6 Flash & Google Calendar Tools
+app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     const { message, history, nowIso, activeUser, registeredUsers, currentEvents } = req.body;

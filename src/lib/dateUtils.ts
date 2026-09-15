@@ -117,3 +117,30 @@ export function intervalsOverlap(
 
   return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
 }
+
+export function formatDayHeaderBR(dateString: string): string {
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: SAO_PAULO_TZ,
+      weekday: 'long',
+      day: '2-digit',
+      month: 'long',
+    }).format(d);
+  } catch {
+    return dateString;
+  }
+}
+
+export function getMonthYearBR(date: Date): string {
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: SAO_PAULO_TZ,
+      month: 'long',
+      year: 'numeric',
+    }).format(date);
+  } catch {
+    return '';
+  }
+}

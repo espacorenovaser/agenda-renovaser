@@ -11,6 +11,7 @@ import {
   ArrowRight,
   ExternalLink,
   HelpCircle,
+  X,
 } from 'lucide-react';
 import {
   initAuth,
@@ -54,6 +55,8 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [prefilledInput, setPrefilledInput] = useState<string>('');
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [selectedProfessionalEmail, setSelectedProfessionalEmail] = useState<string | 'all'>('all');
 
   // Auth Error / Help Modal state
   const [authErrorModal, setAuthErrorModal] = useState<{
@@ -356,7 +359,12 @@ export default function App() {
           const errorData = await res.json();
           errMsg = errorData.error || errorData.text || errMsg;
         } catch {
-          errMsg = `Falha do servidor (${res.status}): ${res.statusText}`;
+          const rawText = await res.text().catch(() => '');
+          if (res.status === 500 || res.status === 504) {
+            errMsg = `Falha de resposta do servidor (${res.status}). Se a aplicação estiver rodando na Vercel, verifique se a variável GEMINI_API_KEY foi adicionada nas configurações do projeto (Environment Variables).`;
+          } else {
+            errMsg = rawText?.slice(0, 150) || `Falha do servidor (${res.status}): ${res.statusText || 'Erro na requisição'}`;
+          }
         }
         throw new Error(errMsg);
       }
@@ -595,6 +603,7 @@ export default function App() {
         activeUser={activeUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         isInIframe={isInIframe}
+        onOpenChat={() => setIsChatOpen(true)}
         onOpenAuthHelp={() =>
           setAuthErrorModal({
             title: 'Conexão com o Google Calendar',
@@ -692,50 +701,126 @@ export default function App() {
           </div>
         ) : null}
 
-        {/* Dual Panel Layout: Chat Assistant (Left) & Live Calendar (Right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-[600px]">
-          {/* Chat Assistant Panel (7 cols on desktop) */}
-          <div className="lg:col-span-7 flex flex-col h-[650px] lg:h-auto">
-            <ChatAssistant
-              messages={messages}
-              isLoading={isChatLoading}
-              onSendMessage={handleSendMessage}
-              onConfirmPendingAction={(action) => {
-                setActivePendingAction(action);
-              }}
-              prefilledInput={prefilledInput}
-              setPrefilledInput={setPrefilledInput}
-              onReconnect={handleLogin}
-              isTokenExpired={isTokenExpired}
-              activeUser={activeUser}
-              onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            />
-          </div>
+        {/* Full-width Calendar Agenda View */}
+        <div className="flex-1 flex flex-col min-h-[600px]">
+          <CalendarView
+            events={visibleEvents}
+            isLoading={isCalendarLoading}
+            onRefresh={fetchCalendarEvents}
+            isDemoMode={isDemoMode && !accessToken}
+            selectedProfessionalEmail={selectedProfessionalEmail}
+            onSelectProfessional={(prof) => setSelectedProfessionalEmail(prof ? prof.email : 'all')}
+            onOpenChat={() => setIsChatOpen(true)}
+            activeUser={activeUser}
+            onSelectSlotForAssistant={(prompt) => {
+              setPrefilledInput(prompt);
+              setIsChatOpen(true);
+            }}
+            onRequestCancel={(event) => {
+              setActivePendingAction({
+                type: 'requestEventCancellation',
+                args: {
+                  eventId: event.id,
+                  eventTitle: event.title,
+                  startDateTime: event.start,
+                },
+              });
+            }}
+          />
+        </div>
 
-          {/* Calendar Agenda Panel (5 cols on desktop) */}
-          <div className="lg:col-span-5 flex flex-col h-[650px] lg:h-auto">
-            <CalendarView
-              events={visibleEvents}
-              isLoading={isCalendarLoading}
-              onRefresh={fetchCalendarEvents}
-              isDemoMode={isDemoMode && !accessToken}
-              onSelectSlotForAssistant={(prompt) => {
-                setPrefilledInput(prompt);
-              }}
-              onRequestCancel={(event) => {
-                setActivePendingAction({
-                  type: 'requestEventCancellation',
-                  args: {
-                    eventId: event.id,
-                    eventTitle: event.title,
-                    startDateTime: event.start,
-                  },
-                });
-              }}
-            />
+        {/* Floating Action Button (FAB) to open chat when hidden */}
+        {!isChatOpen && (
+          <button
+            id="fab-register-schedule"
+            type="button"
+            onClick={() => setIsChatOpen(true)}
+            className="fixed bottom-6 right-6 z-30 px-4 py-3 rounded-2xl bg-[#455243] hover:bg-[#384436] text-[#F7F5F0] shadow-xl hover:shadow-2xl border border-[#384436] flex items-center space-x-3 transition-all cursor-pointer group"
+            title="Clique para registrar horário na agenda com o assistente inteligente"
+          >
+            <div className="w-8 h-8 rounded-xl bg-[#556553] flex items-center justify-center text-[#C4D9C2] shadow-2xs group-hover:scale-110 transition-transform">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="text-left">
+              <div className="text-xs font-bold leading-tight">Registrar Horário</div>
+              <div className="text-[10px] text-[#C4D9C2] leading-tight">Assistente da Agenda</div>
+            </div>
+          </button>
+        )}
+      </main>
+
+      {/* Slide-over Assistant Drawer / Modal */}
+      {isChatOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden animate-in fade-in duration-200">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-[#2E3029]/50 backdrop-blur-xs transition-opacity cursor-pointer"
+            onClick={() => setIsChatOpen(false)}
+            title="Clique para fechar o assistente e voltar para a agenda"
+          />
+
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-3 sm:pl-10">
+            <div className="w-screen max-w-2xl bg-[#FAF9F5] shadow-2xl border-l border-[#E2DFD4] flex flex-col animate-in slide-in-from-right duration-250">
+              {/* Drawer Header */}
+              <div className="px-5 py-4 bg-white border-b border-[#E2DFD4] flex items-center justify-between shrink-0 shadow-2xs">
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#455243] text-white flex items-center justify-center shadow-xs">
+                    <Sparkles className="w-5 h-5 text-[#C4D9C2]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-sm font-bold text-[#2E3029]">
+                        Assistente de Agendamento
+                      </h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#EBF0E9] text-[#3D5A3F] border border-[#C2D6C0] font-medium">
+                        Instituto RenovaSer
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#76766D]">
+                      Conectado como: <strong>{activeUser?.name || 'Administrador'}</strong> (
+                      {activeUser?.role === 'admin'
+                        ? 'Acesso Total'
+                        : activeUser?.specialty || 'Profissional'}
+                      )
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    id="btn-close-assistant-drawer"
+                    type="button"
+                    onClick={() => setIsChatOpen(false)}
+                    className="p-2 rounded-xl text-[#76766D] hover:text-[#2E3029] hover:bg-[#EDEBE1] transition-colors cursor-pointer flex items-center space-x-1"
+                    title="Fechar Assistente e voltar para a agenda"
+                  >
+                    <X className="w-5 h-5" />
+                    <span className="text-xs font-medium hidden sm:inline">Fechar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Drawer Body: ChatAssistant */}
+              <div className="flex-1 overflow-hidden p-3 sm:p-5 flex flex-col">
+                <ChatAssistant
+                  messages={messages}
+                  isLoading={isChatLoading}
+                  onSendMessage={handleSendMessage}
+                  onConfirmPendingAction={(action) => {
+                    setActivePendingAction(action);
+                  }}
+                  prefilledInput={prefilledInput}
+                  setPrefilledInput={setPrefilledInput}
+                  onReconnect={handleLogin}
+                  isTokenExpired={isTokenExpired}
+                  activeUser={activeUser}
+                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                />
+              </div>
+            </div>
           </div>
         </div>
-      </main>
+      )}
 
       {/* Confirmation Modal for Destructive/Mutating Operations */}
       <ConfirmationModal

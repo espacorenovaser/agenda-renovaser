@@ -12,6 +12,7 @@ import {
   UserCheck,
   ExternalLink,
   HelpCircle,
+  Sparkles,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { AppUser } from '../types';
@@ -28,6 +29,7 @@ interface NavbarProps {
   onOpenAuthModal?: () => void;
   isInIframe?: boolean;
   onOpenAuthHelp?: () => void;
+  onOpenChat?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,6 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuthModal,
   isInIframe,
   onOpenAuthHelp,
+  onOpenChat,
 }) => {
   const [currentTime, setCurrentTime] = useState<string>('');
 
@@ -115,6 +118,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </span>
                   </div>
                 </div>
+              </button>
+            )}
+
+            {/* Button to Open Assistant Chat */}
+            {onOpenChat && (
+              <button
+                id="nav-btn-open-chat"
+                type="button"
+                onClick={onOpenChat}
+                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#455243] hover:bg-[#384436] text-[#F7F5F0] text-xs font-semibold shadow-2xs transition-all cursor-pointer border border-[#384436]"
+                title="Registrar horário na agenda com o assistente"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#C4D9C2]" />
+                <span>+ Registrar Horário</span>
               </button>
             )}
 
