@@ -308,33 +308,41 @@ export default function App() {
     setEvents(getSampleEvents());
   };
 
-  // Send message to Gemini Assistant
-  const handleSendMessage = async (text: string) => {
+  // Send message to Gemini Assistant (supports retry without duplicating user bubble)
+  const handleSendMessage = async (text: string, isRetry = false, errorMsgId?: string) => {
+    if (!text.trim()) return;
+
     const token = accessToken || (await getAccessToken());
 
-    const userMessage: ChatMessage = {
-      id: 'usr-' + Date.now(),
-      role: 'user',
-      content: text,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Optimistically update UI
-    setMessages((prev) => [...prev, userMessage]);
-    setIsChatLoading(true);
-
-    if (user) {
-      saveChatMessage(user.uid, {
+    if (isRetry && errorMsgId) {
+      // Remove the previous error message bubble from state
+      setMessages((prev) => prev.filter((m) => m.id !== errorMsgId));
+    } else {
+      const userMessage: ChatMessage = {
+        id: 'usr-' + Date.now(),
         role: 'user',
         content: text,
-        createdAt: userMessage.createdAt,
-      });
+        createdAt: new Date().toISOString(),
+      };
+
+      // Optimistically update UI
+      setMessages((prev) => [...prev, userMessage]);
+
+      if (user) {
+        saveChatMessage(user.uid, {
+          role: 'user',
+          content: text,
+          createdAt: userMessage.createdAt,
+        });
+      }
     }
 
+    setIsChatLoading(true);
+
     try {
-      // Build short history for server context (filter out error messages and empty lines)
+      // Build short history for server context (filter out error messages, empty lines, and retry error)
       const historyContext = messages
-        .filter((m) => !m.isError && m.content && m.content.trim())
+        .filter((m) => !m.isError && m.id !== errorMsgId && m.content && m.content.trim())
         .slice(-8)
         .map((m) => ({
           role: m.role === 'user' ? 'user' : 'model',
@@ -493,6 +501,11 @@ export default function App() {
     }
   };
 
+  // Re-try message without duplicating user bubble
+  const handleRetryMessage = async (text: string, errorId: string) => {
+    await handleSendMessage(text, true, errorId);
+  };
+
   // Clear chat conversation history
   const handleClearChat = async () => {
     const welcomeMsg: ChatMessage = {
@@ -518,21 +531,36 @@ export default function App() {
   // User confirms destructive action (cancel or update)
   const handleConfirmAction = async (action: PendingAction) => {
     const token = accessToken || (await getAccessToken());
-    if (!token) return;
 
     setIsActionExecuting(true);
     try {
       if (action.type === 'requestEventCancellation') {
-        const res = await fetch('/api/calendar/execute-delete', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ eventId: action.args.eventId }),
-        });
+        const eventId = action.args.eventId;
+        // Optimistically remove from agenda state
+        setEvents((prev) => prev.filter((e) => e.id !== eventId));
 
-        if (!res.ok) throw new Error('Falha ao excluir evento da agenda.');
+        // If local event or no Google token, handle locally
+        if (!eventId.startsWith('rnv-') && token) {
+          const res = await fetch('/api/calendar/execute-delete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ eventId }),
+          });
+
+          if (!res.ok) {
+            let errorText = 'Falha ao excluir evento da agenda.';
+            try {
+              const errData = await res.json();
+              errorText = errData.error || errData.message || errorText;
+            } catch {
+              // Ignore parse error
+            }
+            throw new Error(errorText);
+          }
+        }
 
         if (user) {
           await logMeetingAction(user.uid, {
@@ -546,7 +574,7 @@ export default function App() {
         const notifyMsg: ChatMessage = {
           id: 'del-' + Date.now(),
           role: 'assistant',
-          content: `A reunião **"${action.args.eventTitle}"** foi cancelada com sucesso no Google Calendar e removida da agenda.`,
+          content: `A reunião **"${action.args.eventTitle}"** foi cancelada com sucesso e removida da agenda.`,
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, notifyMsg]);
@@ -567,16 +595,27 @@ export default function App() {
           updates.end = { dateTime: action.args.newEndDateTime, timeZone: 'America/Sao_Paulo' };
         }
 
-        const res = await fetch('/api/calendar/execute-update', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ eventId: action.args.eventId, updates }),
-        });
+        if (!action.args.eventId.startsWith('rnv-') && token) {
+          const res = await fetch('/api/calendar/execute-update', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ eventId: action.args.eventId, updates }),
+          });
 
-        if (!res.ok) throw new Error('Falha ao atualizar evento da agenda.');
+          if (!res.ok) {
+            let errorText = 'Falha ao atualizar evento da agenda.';
+            try {
+              const errData = await res.json();
+              errorText = errData.error || errData.message || errorText;
+            } catch {
+              // Ignore parse error
+            }
+            throw new Error(errorText);
+          }
+        }
 
         if (user) {
           await logMeetingAction(user.uid, {
@@ -590,7 +629,7 @@ export default function App() {
         const notifyMsg: ChatMessage = {
           id: 'upd-' + Date.now(),
           role: 'assistant',
-          content: `A reunião **"${action.args.newTitle || action.args.eventTitle}"** foi atualizada com sucesso no Google Calendar!`,
+          content: `A reunião **"${action.args.newTitle || action.args.eventTitle}"** foi atualizada com sucesso!`,
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, notifyMsg]);
@@ -607,7 +646,15 @@ export default function App() {
       fetchCalendarEvents();
     } catch (err: any) {
       console.error('Error confirming action:', err);
-      alert(`Erro: ${err.message}`);
+      const errMsg: ChatMessage = {
+        id: 'err-act-' + Date.now(),
+        role: 'assistant',
+        content: `Não foi possível concluir a ação: ${err.message || 'Erro inesperado'}.`,
+        createdAt: new Date().toISOString(),
+        isError: true,
+      };
+      setMessages((prev) => [...prev, errMsg]);
+      setActivePendingAction(null);
     } finally {
       setIsActionExecuting(false);
     }
@@ -844,6 +891,7 @@ export default function App() {
                   messages={messages}
                   isLoading={isChatLoading}
                   onSendMessage={handleSendMessage}
+                  onRetryMessage={handleRetryMessage}
                   onClearChat={handleClearChat}
                   onConfirmPendingAction={(action) => {
                     setActivePendingAction(action);

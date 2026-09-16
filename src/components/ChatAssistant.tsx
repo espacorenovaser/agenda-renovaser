@@ -29,6 +29,7 @@ interface ChatAssistantProps {
   messages: ChatMessage[];
   isLoading: boolean;
   onSendMessage: (text: string) => Promise<void>;
+  onRetryMessage?: (text: string, errorId: string) => Promise<void> | void;
   onClearChat?: () => void;
   onConfirmPendingAction: (action: PendingAction) => Promise<void>;
   prefilledInput: string;
@@ -43,6 +44,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   messages,
   isLoading,
   onSendMessage,
+  onRetryMessage,
   onClearChat,
   onConfirmPendingAction,
   prefilledInput,
@@ -452,7 +454,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                     <span className="text-[11px] text-rose-700 font-medium">A mensagem não foi concluída.</span>
                     <button
                       type="button"
-                      onClick={() => onSendMessage(msg.retryText!)}
+                      onClick={() => (onRetryMessage ? onRetryMessage(msg.retryText!, msg.id) : onSendMessage(msg.retryText!))}
                       disabled={isLoading}
                       className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
                     >
