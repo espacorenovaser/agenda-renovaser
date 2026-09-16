@@ -368,22 +368,26 @@ export default function App() {
       if (!res.ok) {
         let errMsg = '';
         try {
-          const errorData = await res.json();
-          const raw = errorData.error || errorData.message || errorData.text;
-          if (typeof raw === 'string') {
-            errMsg = raw;
-          } else if (raw && typeof raw === 'object' && raw.message) {
-            errMsg = raw.message;
+          const rawText = await res.text();
+          try {
+            const errorData = JSON.parse(rawText);
+            const raw = errorData.error || errorData.message || errorData.text;
+            if (typeof raw === 'string') {
+              errMsg = raw;
+            } else if (raw && typeof raw === 'object' && raw.message) {
+              errMsg = raw.message;
+            }
+          } catch {
+            if (rawText && rawText.length < 300 && !rawText.includes('<!DOCTYPE') && !rawText.includes('<html')) {
+              errMsg = rawText;
+            }
           }
         } catch {
-          // JSON parse failed
+          // ignore
         }
 
         if (!errMsg) {
-          const rawText = await res.text().catch(() => '');
-          if (rawText && rawText.length < 300 && !rawText.includes('<!DOCTYPE') && !rawText.includes('<html')) {
-            errMsg = rawText;
-          } else if (res.status === 503) {
+          if (res.status === 503) {
             errMsg = 'O serviço de inteligência artificial está com alta demanda momentânea nos servidores da Google. Por favor, tente novamente em alguns instantes.';
           } else {
             errMsg = `Falha temporária de comunicação com o servidor (${res.status}). Por favor, clique em "Tentar novamente" abaixo.`;
