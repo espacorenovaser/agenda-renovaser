@@ -445,49 +445,37 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  // Ordered by speed and responsiveness: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.0-flash, gemini-3.8-flash, gemini-3.6-flash
+  // Ordered by speed, responsiveness and availability:
+  // 1. gemini-3.5-flash-lite (ultra-fast, ~500ms, high throughput)
+  // 2. gemini-3.1-flash-lite (standard lite model)
+  // 3. gemini-3.6-flash (standard general flash model)
+  // 4. gemini-flash-latest (dynamic alias)
+  // 5. gemini-3.8-flash (complex text model)
   const candidateModels = [
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
     'gemini-3.6-flash',
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
   ];
   let lastError: any = null;
 
   for (const model of candidateModels) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: params.contents,
-          config: {
-            systemInstruction: params.systemInstruction,
-            tools: params.tools,
-            temperature: params.temperature ?? 0.2,
-          },
-        });
-        return response;
-      } catch (err: any) {
-        lastError = err;
-        const msg = String(err?.message || err);
-        const isTransient =
-          msg.includes('503') ||
-          msg.includes('UNAVAILABLE') ||
-          msg.includes('high demand') ||
-          msg.includes('429') ||
-          msg.includes('RESOURCE_EXHAUSTED') ||
-          msg.includes('fetch failed');
-
-        if (!isTransient) {
-          // If it's a 404 or other non-transient model issue, break to next candidate model
-          break;
-        }
-
-        console.warn(`[Gemini API] Model ${model} attempt ${attempt + 1} transient error: ${msg}. Trying next or retrying...`);
-        const delay = (attempt + 1) * 800;
-        await new Promise((res) => setTimeout(res, delay));
-      }
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: {
+          systemInstruction: params.systemInstruction,
+          tools: params.tools,
+          temperature: params.temperature ?? 0.2,
+        },
+      });
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      const msg = String(err?.message || err);
+      console.warn(`[Gemini API] Modelo ${model} indisponível ou em alta demanda (${msg.slice(0, 100)}). Alternando imediatamente para o próximo modelo...`);
     }
   }
 
