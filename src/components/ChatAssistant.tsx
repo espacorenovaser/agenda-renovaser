@@ -244,10 +244,18 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                 className={`w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-xs font-semibold ${
                   isUser
                     ? 'bg-emerald-700 text-white shadow-2xs'
+                    : msg.isError
+                    ? 'bg-rose-100 text-rose-700 border border-rose-200 shadow-2xs'
                     : 'bg-white text-emerald-700 border border-slate-200 shadow-2xs'
                 }`}
               >
-                {isUser ? <UserIcon className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                {isUser ? (
+                  <UserIcon className="w-4 h-4" />
+                ) : msg.isError ? (
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                ) : (
+                  <Bot className="w-4 h-4" />
+                )}
               </div>
 
               {/* Message Bubble */}
@@ -255,6 +263,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                 className={`max-w-[85%] sm:max-w-[78%] rounded-2xl p-4 text-sm leading-relaxed ${
                   isUser
                     ? 'bg-emerald-700 text-white rounded-tr-xs shadow-xs'
+                    : msg.isError
+                    ? 'bg-rose-50 text-rose-950 rounded-tl-xs border border-rose-200 shadow-xs'
                     : 'bg-white text-slate-800 rounded-tl-xs border border-slate-200 shadow-xs'
                 }`}
               >
@@ -432,6 +442,22 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                       <span>Reconectar Google Agenda</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Direct Retry Button if message encountered an error */}
+                {msg.isError && msg.retryText && (
+                  <div className="mt-3 pt-2.5 border-t border-rose-200 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-rose-700 font-medium">A mensagem não foi concluída.</span>
+                    <button
+                      type="button"
+                      onClick={() => onSendMessage(msg.retryText!)}
+                      disabled={isLoading}
+                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Tentar novamente</span>
                     </button>
                   </div>
                 )}

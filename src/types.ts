@@ -45,6 +45,7 @@ export interface ChatMessage {
   pendingActions?: PendingAction[];
   executedEvents?: CalendarEvent[];
   isError?: boolean;
+  retryText?: string;
   authExpired?: boolean;
   emailNotice?: EmailNotice;
 }

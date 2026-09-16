@@ -332,11 +332,14 @@ export default function App() {
     }
 
     try {
-      // Build short history for server context
-      const historyContext = messages.slice(-8).map((m) => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        text: m.content,
-      }));
+      // Build short history for server context (filter out error messages and empty lines)
+      const historyContext = messages
+        .filter((m) => !m.isError && m.content && m.content.trim())
+        .slice(-8)
+        .map((m) => ({
+          role: m.role === 'user' ? 'user' : 'model',
+          text: m.content,
+        }));
 
       const res = await fetch('/api/assistant/chat', {
         method: 'POST',
@@ -370,12 +373,12 @@ export default function App() {
 
         if (!errMsg) {
           const rawText = await res.text().catch(() => '');
-          if (rawText && rawText.length < 300 && !rawText.includes('<!DOCTYPE')) {
+          if (rawText && rawText.length < 300 && !rawText.includes('<!DOCTYPE') && !rawText.includes('<html')) {
             errMsg = rawText;
           } else if (res.status === 503) {
             errMsg = 'O serviço de inteligência artificial está com alta demanda momentânea nos servidores da Google. Por favor, tente novamente em alguns instantes.';
           } else {
-            errMsg = `Falha de resposta do servidor (${res.status}): ${res.statusText || 'Erro temporário na comunicação'}. Por favor, tente novamente.`;
+            errMsg = `Falha temporária de comunicação com o servidor (${res.status}). Por favor, clique em "Tentar novamente" abaixo.`;
           }
         }
         throw new Error(errMsg);
@@ -468,11 +471,9 @@ export default function App() {
         setIsTokenExpired(true);
       }
 
-      let userText = err.message?.startsWith('Ocorreu um erro')
-        ? err.message
-        : `Ocorreu um erro ao comunicar com a agenda: ${err.message || 'Tente novamente.'}`;
+      let userText = err.message || 'Erro temporário na comunicação com o assistente.';
       if (isHighDemand) {
-        userText = 'O assistente de inteligência artificial está temporariamente sobrecarregado nos servidores da Google. Por favor, aguarde alguns instantes e tente novamente, ou adicione OPENAI_API_KEY nas variáveis para contingência automática.';
+        userText = 'O assistente de inteligência artificial está temporariamente sobrecarregado nos servidores da Google. Por favor, clique em "Tentar novamente" abaixo ou adicione a chave OPENAI_API_KEY no painel para contingência automática.';
       } else if (isAuthError) {
         userText = 'Sua sessão com o Google Agenda expirou por segurança (validade padrão de 1 hora da Google). Clique no botão abaixo para reconectar sua conta com um clique.';
       }
@@ -483,6 +484,7 @@ export default function App() {
         content: userText,
         createdAt: new Date().toISOString(),
         isError: true,
+        retryText: text,
         authExpired: isAuthError,
       };
       setMessages((prev) => [...prev, errMsg]);

@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { GoogleGenAI, Type, type FunctionDeclaration } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel, type FunctionDeclaration } from '@google/genai';
 import OpenAI from 'openai';
 
 dotenv.config();
@@ -435,7 +435,16 @@ app.post(['/api/calendar/execute-update', '/calendar/execute-update'], async (re
   }
 });
 
-// Helper: generateContent with resilient multi-model fallback and retry
+// Helper: timeout wrapper with abort race
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`Timeout de ${ms}ms excedido para ${label}`)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+// Helper: generateContent with resilient multi-model fallback and strict per-attempt timeout
 async function generateContentWithRetry(
   ai: GoogleGenAI,
   params: {
@@ -445,37 +454,42 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  // Ordered by speed, responsiveness and availability:
-  // 1. gemini-3.5-flash-lite (ultra-fast, ~500ms, high throughput)
-  // 2. gemini-3.1-flash-lite (standard lite model)
-  // 3. gemini-3.6-flash (standard general flash model)
-  // 4. gemini-flash-latest (dynamic alias)
-  // 5. gemini-3.8-flash (complex text model)
+  // Ordered by speed, responsiveness and real-time availability:
+  // 1. gemini-3.5-flash-lite (ultra-fast, ~700ms, lowest latency, high throughput)
+  // 2. gemini-3.6-flash (standard flash model, exceptional tool-calling)
+  // 3. gemini-3.1-flash-lite (standard lite model)
+  // 4. gemini-3.8-flash (complex text model with low thinking)
+  // 5. gemini-flash-latest (dynamic alias)
   const candidateModels = [
     'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
     'gemini-3.6-flash',
-    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
     'gemini-3.8-flash',
+    'gemini-flash-latest',
   ];
   let lastError: any = null;
 
   for (const model of candidateModels) {
     try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: params.contents,
-        config: {
-          systemInstruction: params.systemInstruction,
-          tools: params.tools,
-          temperature: params.temperature ?? 0.2,
-        },
-      });
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: {
+            systemInstruction: params.systemInstruction,
+            tools: params.tools,
+            temperature: params.temperature ?? 0.2,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          },
+        }),
+        15000,
+        `modelo ${model}`
+      );
       return response;
     } catch (err: any) {
       lastError = err;
       const msg = String(err?.message || err);
-      console.warn(`[Gemini API] Modelo ${model} indisponível ou em alta demanda (${msg.slice(0, 100)}). Alternando imediatamente para o próximo modelo...`);
+      console.warn(`[Gemini API] Modelo ${model} falhou ou excedeu tempo (${msg.slice(0, 100)}). Alternando imediatamente para o próximo modelo...`);
     }
   }
 
@@ -744,7 +758,6 @@ Assunto: [ex: "Atendimento agendado - Instituto RenovaSer"]
 Corpo: Olá, [nome]! Informamos que seu atendimento foi [agendado/alterado/cancelado]:
 - Data: [data]
 - Horário: [início] às [término]
-- Duração: [min]
 - Local: Sala do Instituto RenovaSer
 - Observações: [se houver]
 Por favor, compareça com antecedência. Atenciosamente, Instituto RenovaSer.
@@ -1115,22 +1128,37 @@ TOM:
       return { error: `Ferramenta desconhecida: ${callName}` };
     }
 
-    // Build chat contents from history
-    const contents: any[] = [];
+    // Build chat contents from history with strict alternating roles guarantee
+    const rawContents: any[] = [];
     if (Array.isArray(history)) {
       for (const h of history) {
-        if (h.role === 'user' || h.role === 'model') {
-          contents.push({
-            role: h.role,
+        if (
+          h &&
+          (h.role === 'user' || h.role === 'model' || h.role === 'assistant') &&
+          typeof h.text === 'string' &&
+          h.text.trim()
+        ) {
+          rawContents.push({
+            role: h.role === 'assistant' ? 'model' : h.role,
             parts: [{ text: h.text }],
           });
         }
       }
     }
-    contents.push({
+    rawContents.push({
       role: 'user',
       parts: [{ text: message }],
     });
+
+    // Merge consecutive messages with the same role so Gemini API never fails with 400 Invalid argument
+    const contents: any[] = [];
+    for (const item of rawContents) {
+      if (contents.length > 0 && contents[contents.length - 1].role === item.role) {
+        contents[contents.length - 1].parts.push(...item.parts);
+      } else {
+        contents.push(item);
+      }
+    }
 
     const toolsConfig = [
       {
@@ -1225,6 +1253,7 @@ TOM:
               functionResponse: {
                 name: call.name,
                 response: result,
+                ...(call.id ? { id: call.id } : {}),
               },
             });
           }
@@ -1238,17 +1267,9 @@ TOM:
         const geminiMsg = String(geminiError?.message || geminiError);
         console.warn('[Gemini API Warning]', geminiMsg);
 
-        const isQuotaOrOverload =
-          geminiMsg.includes('503') ||
-          geminiMsg.includes('high demand') ||
-          geminiMsg.includes('UNAVAILABLE') ||
-          geminiMsg.includes('429') ||
-          geminiMsg.includes('RESOURCE_EXHAUSTED') ||
-          geminiMsg.includes('quota') ||
-          geminiMsg.includes('Quota');
-
-        if (hasOpenAI && isQuotaOrOverload) {
-          console.log('[AI Fallback] Gemini indisponível ou limite de cota atingido. Alternando para OpenAI (GPT-4o)...');
+        // Fallback to OpenAI if available on any Gemini failure
+        if (hasOpenAI) {
+          console.log('[AI Fallback] Gemini indisponível ou com erro. Alternando imediatamente para OpenAI (GPT-4o)...');
           const openai = getOpenAI();
           if (openai) {
             usedProvider = 'openai (fallback)';
@@ -1263,11 +1284,18 @@ TOM:
             throw geminiError;
           }
         } else {
+          const isQuotaOrOverload =
+            geminiMsg.includes('503') ||
+            geminiMsg.includes('high demand') ||
+            geminiMsg.includes('UNAVAILABLE') ||
+            geminiMsg.includes('429') ||
+            geminiMsg.includes('RESOURCE_EXHAUSTED') ||
+            geminiMsg.includes('quota') ||
+            geminiMsg.includes('Quota');
+
           if (isQuotaOrOverload) {
             throw new Error(
-              hasOpenAI
-                ? `Erro ao comunicar com a IA: ${geminiMsg}`
-                : 'A cota temporária do Gemini foi atingida nos servidores da Google (429/Resource Exhausted). Você pode adicionar a chave OPENAI_API_KEY no painel de Segredos/Settings para usar a OpenAI (GPT-4o) como alternativa ou fallback automático imediato!'
+              'Os servidores de IA do Gemini estão temporariamente sobrecarregados. Por favor, aguarde alguns instantes ou configure a chave OPENAI_API_KEY no painel de Segredos/Settings como alternativa automática!'
             );
           }
           throw geminiError;
