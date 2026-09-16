@@ -50,7 +50,7 @@ export const SCHEDULE_CATEGORIES: Record<ScheduleCategory, CategoryDefinition> =
     id: 'atendimento',
     name: 'Atendimento',
     description: 'Atendimentos com hora marcada na sala do instituto',
-    durationRule: '60 a 90 minutos',
+    durationRule: 'Hora marcada conforme necessidade',
     badgeLabel: 'Atendimento',
     colorBg: 'bg-emerald-50',
     colorText: 'text-emerald-800',
@@ -129,7 +129,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
     return {
       category: 'atendimento',
       label: 'Atendimento',
-      durationLabel: '60 a 90 min',
+      durationLabel: 'Hora marcada',
       badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
     };
   }
@@ -223,7 +223,7 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
   return {
     category: 'atendimento',
     label: 'Atendimento',
-    durationLabel: '60 a 90 min',
+    durationLabel: 'Hora marcada',
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
   };
 }

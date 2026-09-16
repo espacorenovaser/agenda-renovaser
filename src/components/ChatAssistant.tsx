@@ -107,10 +107,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
   const handleQuickSchedulePrompt = (category: string) => {
     let prompt = '';
-    if (category === 'atendimento_60') {
-      prompt = 'Gostaria de agendar um atendimento de 60 minutos na sala do Instituto RenovaSer.';
-    } else if (category === 'atendimento_90') {
-      prompt = 'Gostaria de agendar um atendimento de 90 minutos na sala do Instituto RenovaSer.';
+    if (category === 'atendimento') {
+      prompt = 'Gostaria de agendar um atendimento na sala do Instituto RenovaSer.';
     } else if (category === 'reuniao') {
       prompt = 'Gostaria de agendar uma reunião de alinhamento com a equipe no Instituto RenovaSer.';
     } else if (category === 'comunicacao') {
@@ -486,19 +484,11 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           </span>
           <button
             type="button"
-            onClick={() => handleQuickSchedulePrompt('atendimento_60')}
+            onClick={() => handleQuickSchedulePrompt('atendimento')}
             className="px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold transition-colors shrink-0 cursor-pointer"
-            title="Atendimento de 60 minutos"
+            title="Agendar atendimento com hora marcada"
           >
-            + Atendimento (60m)
-          </button>
-          <button
-            type="button"
-            onClick={() => handleQuickSchedulePrompt('atendimento_90')}
-            className="px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold transition-colors shrink-0 cursor-pointer"
-            title="Atendimento de 90 minutos"
-          >
-            + Atendimento (90m)
+            + Atendimento
           </button>
           <button
             type="button"

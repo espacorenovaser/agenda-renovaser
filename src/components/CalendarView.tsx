@@ -752,7 +752,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   onSelectSlotForAssistant(
                     `Agendar atendimento com hora marcada ${
                       activeTab === 'tomorrow' ? 'amanhã' : 'hoje'
-                    } das ${slot.start} às ${slot.end} (duração: 60 minutos) na sala do Instituto RenovaSer.`
+                    } das ${slot.start} às ${slot.end} na sala do Instituto RenovaSer.`
                   )
                 }
                 className={`p-3 rounded-xl text-center text-xs transition-all border ${
@@ -835,7 +835,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   onSelectSlotForAssistant(
                     `Gostaria de registrar um horário na agenda ${
                       activeTab === 'tomorrow' ? 'de amanhã' : 'de hoje'
-                    } às 14:00 (duração: 60 minutos).`
+                    } às 14:00.`
                   );
                 }
               }}

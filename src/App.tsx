@@ -171,7 +171,7 @@ export default function App() {
           id: 'welcome',
           role: 'assistant',
           content:
-            'Olá! Sou a Agenda Interna do Instituto RenovaSer.\n\nEstou configurado no fuso horário America/Sao_Paulo (GMT-3) para organizar os agendamentos do instituto nas seguintes modalidades:\n\n• **Atendimentos**: 60 a 90 minutos com hora marcada na sala\n• **Reunião**: tempo definido conforme a necessidade\n• **Eventos**: Workshop, Treinamento, Formação e Transmissão on-line\n\nIdentifique-se com seu login (Admin ou Profissional) e conecte sua conta Google para sincronização.',
+            'Olá! Sou a Agenda Interna do Instituto RenovaSer.\n\nEstou configurado no fuso horário America/Sao_Paulo (GMT-3) para organizar os agendamentos do instituto nas seguintes modalidades:\n\n• **Atendimentos**: com hora marcada na sala\n• **Reunião**: tempo definido conforme a necessidade\n• **Eventos**: Workshop, Treinamento, Formação e Transmissão on-line\n\nIdentifique-se com seu login (Admin ou Profissional) e conecte sua conta Google para sincronização.',
           createdAt: new Date().toISOString(),
         },
       ]);
@@ -190,7 +190,7 @@ export default function App() {
               role: 'assistant',
               content: `Olá, ${
                 user.displayName || activeUser?.name || 'colega'
-              }! Sou a Agenda Interna do Instituto RenovaSer.\n\nO que deseja agendar hoje?\n• **Atendimentos**: 60 a 90 minutos com hora marcada\n• **Reunião**: tempo definido conforme a necessidade\n• **Eventos**: Workshop, Treinamento, Formação ou Transmissão on-line\n\nBasta me dizer o que precisa ou clicar em uma das sugestões!`,
+              }! Sou a Agenda Interna do Instituto RenovaSer.\n\nO que deseja agendar hoje?\n• **Atendimentos**: com hora marcada na sala\n• **Reunião**: tempo definido conforme a necessidade\n• **Eventos**: Workshop, Treinamento, Formação ou Transmissão on-line\n\nBasta me dizer o que precisa ou clicar em uma das sugestões!`,
               createdAt: new Date().toISOString(),
             },
           ]);
@@ -463,9 +463,11 @@ export default function App() {
         setIsTokenExpired(true);
       }
 
-      let userText = `Ocorreu um erro ao comunicar com a agenda: ${err.message || 'Tente novamente.'}`;
+      let userText = err.message?.startsWith('Ocorreu um erro')
+        ? err.message
+        : `Ocorreu um erro ao comunicar com a agenda: ${err.message || 'Tente novamente.'}`;
       if (isHighDemand) {
-        userText = 'O assistente de inteligência artificial está temporariamente sobrecarregado nos servidores. Por favor, aguarde alguns instantes e envie sua solicitação novamente.';
+        userText = 'O assistente de inteligência artificial está temporariamente sobrecarregado nos servidores da Google. Por favor, aguarde alguns instantes e tente novamente, ou adicione OPENAI_API_KEY nas variáveis para contingência automática.';
       } else if (isAuthError) {
         userText = 'Sua sessão com o Google Agenda expirou por segurança (validade padrão de 1 hora da Google). Clique no botão abaixo para reconectar sua conta com um clique.';
       }
@@ -490,7 +492,7 @@ export default function App() {
       id: 'welcome-' + Date.now(),
       role: 'assistant',
       content: user
-        ? `Olá, ${user.displayName || activeUser?.name || 'colega'}! Sou a Agenda Interna do Instituto RenovaSer.\n\nO histórico do chat foi limpo. O que deseja agendar?\n• **Atendimentos**: 60 a 90 minutos com hora marcada\n• **Reunião**: tempo flexível conforme necessidade\n• **Eventos**: Workshop, Treinamento, Formação ou Transmissão on-line\n• **Comunicação**: informe ou aviso oficial da equipe`
+        ? `Olá, ${user.displayName || activeUser?.name || 'colega'}! Sou a Agenda Interna do Instituto RenovaSer.\n\nO histórico do chat foi limpo. O que deseja agendar?\n• **Atendimentos**: com hora marcada na sala\n• **Reunião**: tempo flexível conforme necessidade\n• **Eventos**: Workshop, Treinamento, Formação ou Transmissão on-line\n• **Comunicação**: informe ou aviso oficial da equipe`
         : 'Olá! Sou a Agenda Interna do Instituto RenovaSer.\n\nO histórico do chat foi limpo. Em que posso ajudar você hoje?',
       createdAt: new Date().toISOString(),
     };
@@ -658,7 +660,7 @@ export default function App() {
                 Gestão integrada de atendimentos e eventos do instituto
               </h1>
               <p className="text-sm text-emerald-100 max-w-2xl leading-relaxed">
-                Conecte a conta do Google Agenda para sincronizar seus compromissos, verificar a disponibilidade da sala de atendimentos e agendar com hora marcada (60 a 90 min).
+                Conecte a conta do Google Agenda para sincronizar seus compromissos, verificar a disponibilidade da sala de atendimentos e agendar com hora marcada.
               </p>
               {isDemoMode && (
                 <div className="inline-flex items-center space-x-1.5 text-xs text-emerald-200 bg-emerald-950/70 px-3 py-1 rounded-xl border border-emerald-800">

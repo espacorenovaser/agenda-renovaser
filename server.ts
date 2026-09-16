@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type, type FunctionDeclaration } from '@google/genai';
+import OpenAI from 'openai';
 
 dotenv.config();
 
@@ -28,6 +29,281 @@ function getGenAI(): GoogleGenAI {
   });
 }
 
+// Lazy-initialized OpenAI client
+function getOpenAI(): OpenAI | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
+
+// OpenAI Tool Declarations for Google Calendar & Agenda Interna
+const openAITools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'listCalendarEvents',
+      description: 'Consulta eventos e compromissos na agenda do Google Calendar para verificar horários, compromissos existentes e conflitos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          timeMin: {
+            type: 'string',
+            description: 'Data e hora mínima no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss-03:00)',
+          },
+          timeMax: {
+            type: 'string',
+            description: 'Data e hora máxima no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss-03:00)',
+          },
+          query: {
+            type: 'string',
+            description: 'Termo de busca opcional (ex: título ou participante)',
+          },
+        },
+        required: ['timeMin'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'createCalendarEvent',
+      description: 'Cria um novo agendamento (Atendimento, Reunião ou Evento) na agenda do Google Calendar do Instituto RenovaSer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Título ou assunto do agendamento',
+          },
+          category: {
+            type: 'string',
+            enum: ['atendimento', 'reuniao', 'evento', 'comunicacao'],
+            description: 'Categoria do que está sendo agendado: "atendimento" (atendimento com hora marcada), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
+          },
+          eventSubtype: {
+            type: 'string',
+            enum: ['workshop', 'treinamento', 'formacao', 'transmissao_online'],
+            description: 'Se a categoria for "evento", especifique obrigatoriamente o subtipo: "workshop", "treinamento", "formacao" ou "transmissao_online"',
+          },
+          startDateTime: {
+            type: 'string',
+            description: 'Data e hora de início no formato ISO 8601 completo com fuso -03:00 (YYYY-MM-DDTHH:mm:ss-03:00)',
+          },
+          endDateTime: {
+            type: 'string',
+            description: 'Data e hora de término no formato ISO 8601 completo com fuso -03:00 (YYYY-MM-DDTHH:mm:ss-03:00). Duração definida conforme informado pelo usuário ou profissional.',
+          },
+          attendees: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Lista de e-mails dos participantes ou envolvidos',
+          },
+          description: {
+            type: 'string',
+            description: 'Pauta, detalhes ou observações do agendamento',
+          },
+          createMeetLink: {
+            type: 'boolean',
+            description: 'Define se deve gerar automaticamente um link de videoconferência do Google Meet (recomendado para Transmissões on-line e reuniões remotas)',
+          },
+        },
+        required: ['title', 'startDateTime', 'endDateTime'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'requestEventCancellation',
+      description: 'Solicita a confirmação do usuário para cancelar/excluir uma reunião existente identificada na agenda.',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventId: {
+            type: 'string',
+            description: 'ID do evento no Google Calendar',
+          },
+          eventTitle: {
+            type: 'string',
+            description: 'Título do evento a ser cancelado',
+          },
+          startDateTime: {
+            type: 'string',
+            description: 'Horário do evento',
+          },
+        },
+        required: ['eventId', 'eventTitle'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'requestEventUpdate',
+      description: 'Solicita a confirmação do usuário para atualizar ou reagendar uma reunião existente na agenda.',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventId: {
+            type: 'string',
+            description: 'ID do evento no Google Calendar',
+          },
+          eventTitle: {
+            type: 'string',
+            description: 'Título atual do evento',
+          },
+          newTitle: {
+            type: 'string',
+            description: 'Novo título se houver alteração',
+          },
+          newStartDateTime: {
+            type: 'string',
+            description: 'Novo início ISO 8601 (-03:00)',
+          },
+          newEndDateTime: {
+            type: 'string',
+            description: 'Novo fim ISO 8601 (-03:00)',
+          },
+          newAttendees: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Nova lista de e-mails de participantes',
+          },
+        },
+        required: ['eventId', 'eventTitle'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'loginUser',
+      description: 'Efetua login do usuário com e-mail e senha no sistema do Instituto RenovaSer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          email: {
+            type: 'string',
+            description: 'E-mail do administrador ou profissional',
+          },
+          password: {
+            type: 'string',
+            description: 'Senha informada pelo usuário',
+          },
+        },
+        required: ['email', 'password'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'registerProfessional',
+      description: 'Cadastra um novo profissional com hora marcada no Instituto RenovaSer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Nome completo do profissional',
+          },
+          email: {
+            type: 'string',
+            description: 'E-mail do profissional',
+          },
+          password: {
+            type: 'string',
+            description: 'Senha escolhida pelo profissional',
+          },
+          specialty: {
+            type: 'string',
+            description: 'Área de atuação (ex: Psicólogo, Fisioterapeuta, Nutricionista)',
+          },
+        },
+        required: ['name', 'email', 'password', 'specialty'],
+      },
+    },
+  },
+];
+
+// Helper: Run chat with OpenAI and function calling
+async function runOpenAIChat({
+  openai,
+  systemInstruction,
+  history,
+  message,
+  handleTool,
+}: {
+  openai: OpenAI;
+  systemInstruction: string;
+  history: any[];
+  message: string;
+  handleTool: (name: string, args: any) => Promise<any>;
+}): Promise<string> {
+  const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemInstruction },
+  ];
+
+  if (Array.isArray(history)) {
+    for (const h of history) {
+      if (h.role === 'user') {
+        messages.push({ role: 'user', content: h.text || '' });
+      } else if (h.role === 'model' || h.role === 'assistant') {
+        messages.push({ role: 'assistant', content: h.text || '' });
+      }
+    }
+  }
+
+  messages.push({ role: 'user', content: message });
+
+  let finalAnswer = '';
+  let maxTurns = 5;
+
+  while (maxTurns > 0) {
+    maxTurns--;
+    const completion = await openai.chat.completions.create({
+      model: modelName,
+      messages,
+      tools: openAITools,
+      tool_choice: 'auto',
+      temperature: 0.2,
+    });
+
+    const choice = completion.choices?.[0];
+    const choiceMessage = choice?.message;
+    if (!choiceMessage) break;
+
+    messages.push(choiceMessage);
+
+    const toolCalls = choiceMessage.tool_calls;
+    if (!toolCalls || toolCalls.length === 0) {
+      finalAnswer = choiceMessage.content || '';
+      break;
+    }
+
+    for (const toolCall of toolCalls) {
+      if (toolCall.type !== 'function') continue;
+      let parsedArgs: any = {};
+      try {
+        parsedArgs = JSON.parse(toolCall.function.arguments || '{}');
+      } catch (err) {
+        console.warn('Failed to parse OpenAI tool call arguments:', toolCall.function.arguments);
+      }
+
+      const result = await handleTool(toolCall.function.name, parsedArgs);
+
+      messages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
+    }
+  }
+
+  return finalAnswer;
+}
+
 function toGoogleCalendarUtcString(isoStr: string): string {
   try {
     const d = new Date(isoStr);
@@ -40,7 +316,20 @@ function toGoogleCalendarUtcString(isoStr: string): string {
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timeZone: 'America/Sao_Paulo' });
+  const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  const activeProvider = process.env.AI_PROVIDER || (hasOpenAI && !hasGemini ? 'openai' : 'auto');
+
+  res.json({
+    status: 'ok',
+    timeZone: 'America/Sao_Paulo',
+    providers: {
+      geminiConfigured: hasGemini,
+      openaiConfigured: hasOpenAI,
+      activeProvider,
+      fallbackEnabled: hasGemini && hasOpenAI,
+    },
+  });
 });
 
 // Direct Calendar Listing Proxy
@@ -156,11 +445,11 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  // Ordered by speed and responsiveness: gemini-3.5-flash-lite, gemini-3.1-flash-lite, gemini-flash-lite-latest, gemini-3.8-flash, gemini-3.6-flash
+  // Ordered by speed and responsiveness: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.0-flash, gemini-3.8-flash, gemini-3.6-flash
   const candidateModels = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-    'gemini-flash-lite-latest',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
     'gemini-3.8-flash',
     'gemini-3.6-flash',
   ];
@@ -215,7 +504,16 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
       return res.status(400).json({ error: 'Mensagem vazia.' });
     }
 
-    const ai = getGenAI();
+    const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+    const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+    const prefProvider = (process.env.AI_PROVIDER || 'auto').toLowerCase();
+
+    if (!hasGemini && !hasOpenAI) {
+      return res.status(500).json({
+        error:
+          'Nenhuma chave de IA configurada. Adicione GEMINI_API_KEY ou OPENAI_API_KEY nas variáveis de ambiente do projeto (Settings > Secrets no AI Studio ou Environment Variables na Vercel).',
+      });
+    }
 
     // Tool declarations
     const listCalendarEventsDecl: FunctionDeclaration = {
@@ -253,7 +551,7 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
           },
           category: {
             type: Type.STRING,
-            description: 'Categoria do que está sendo agendado: "atendimento" (60 a 90 minutos), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
+            description: 'Categoria do que está sendo agendado: "atendimento" (atendimento com hora marcada), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
             enum: ['atendimento', 'reuniao', 'evento', 'comunicacao'],
           },
           eventSubtype: {
@@ -267,7 +565,7 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
           },
           endDateTime: {
             type: Type.STRING,
-            description: 'Data e hora de término no formato ISO 8601 completo com fuso -03:00 (YYYY-MM-DDTHH:mm:ss-03:00). Atendimentos: 60 a 90 minutos. Reunião: tempo flexível conforme necessidade. Eventos: conforme programação.',
+            description: 'Data e hora de término no formato ISO 8601 completo com fuso -03:00 (YYYY-MM-DDTHH:mm:ss-03:00). Duração definida conforme informado pelo usuário ou profissional.',
           },
           attendees: {
             type: Type.ARRAY,
@@ -434,7 +732,7 @@ FUNCIONALIDADES DO PROFISSIONAL:
 - Ver os horários livres da semana.
 
 REGRAS DE AGENDAMENTO:
-- Duração padrão: 60 minutos (ou 90 se informado). Fuso: America/Sao_Paulo (GMT-3).
+- Duração: flexível conforme o horário informado pelo usuário ou profissional. Fuso: America/Sao_Paulo (GMT-3).
 - Data e hora de referência atual: ${nowIso || new Date().toISOString()} (America/Sao_Paulo).
 - ANTES de confirmar qualquer agendamento, verifique CONFLITOS:
   * Se o profissional já tem outro atendimento no mesmo horário → AVISE e sugira alternativas.
@@ -705,7 +1003,7 @@ TOM:
 
           const categoryHeader =
             category === 'atendimento'
-              ? 'Modalidade: Atendimento (60 a 90 minutos)'
+              ? 'Modalidade: Atendimento com Hora Marcada'
               : category === 'reuniao'
               ? 'Modalidade: Reunião (Tempo definido conforme necessidade)'
               : category === 'comunicacao'
@@ -859,66 +1157,134 @@ TOM:
       },
     ];
 
-    // Multi-turn tool execution loop
-    let currentContents = [...contents];
-    let finalAnswer = '';
+    // Tool execution tracking
     let pendingActions: any[] = [];
     let executedEvents: any[] = [];
     let isAuthExpired = false;
-    let maxIterations = 5;
 
-    while (maxIterations > 0) {
-      maxIterations--;
-      const response = await generateContentWithRetry(ai, {
-        contents: currentContents,
-        systemInstruction,
-        tools: toolsConfig,
-        temperature: 0.2,
-      });
+    async function handleToolExecution(callName: string, callArgs: any) {
+      const result = await executeCalendarTool(callName, callArgs);
 
-      const candidate = response.candidates?.[0];
-      const modelContent = candidate?.content;
-      const functionCalls = response.functionCalls;
-
-      if (!functionCalls || functionCalls.length === 0) {
-        finalAnswer = response.text || '';
-        break;
+      if ((result as any)?.authExpired || (result as any)?.error === 'TOKEN_EXPIRED') {
+        isAuthExpired = true;
       }
 
-      // Add model's turn with tool calls to conversation history
-      currentContents.push(modelContent);
-
-      // Execute each tool call and append responses
-      const functionResponseParts: any[] = [];
-      for (const call of functionCalls) {
-        const result = await executeCalendarTool(call.name, call.args);
-
-        if ((result as any)?.authExpired || (result as any)?.error === 'TOKEN_EXPIRED') {
-          isAuthExpired = true;
-        }
-
-        if (call.name === 'createCalendarEvent' && (result as any).event) {
-          executedEvents.push((result as any).event);
-        }
-        if (call.name === 'requestEventCancellation' || call.name === 'requestEventUpdate') {
-          pendingActions.push({
-            type: call.name,
-            args: call.args,
-          });
-        }
-
-        functionResponseParts.push({
-          functionResponse: {
-            name: call.name,
-            response: result,
-          },
+      if (callName === 'createCalendarEvent' && (result as any).event) {
+        executedEvents.push((result as any).event);
+      }
+      if (callName === 'requestEventCancellation' || callName === 'requestEventUpdate') {
+        pendingActions.push({
+          type: callName,
+          args: callArgs,
         });
       }
 
-      currentContents.push({
-        role: 'user',
-        parts: functionResponseParts,
+      return result;
+    }
+
+    let finalAnswer = '';
+    let usedProvider = 'gemini';
+
+    const useOpenAIDirectly = prefProvider === 'openai' || (!hasGemini && hasOpenAI);
+
+    if (useOpenAIDirectly) {
+      const openai = getOpenAI();
+      if (!openai) {
+        throw new Error('A variável de ambiente OPENAI_API_KEY não foi encontrada.');
+      }
+      usedProvider = 'openai';
+      finalAnswer = await runOpenAIChat({
+        openai,
+        systemInstruction,
+        history,
+        message,
+        handleTool: handleToolExecution,
       });
+    } else {
+      // Gemini execution with automatic OpenAI failover
+      try {
+        const ai = getGenAI();
+        usedProvider = 'gemini';
+
+        // Multi-turn tool execution loop for Gemini
+        let currentContents = [...contents];
+        let maxIterations = 5;
+
+        while (maxIterations > 0) {
+          maxIterations--;
+          const response = await generateContentWithRetry(ai, {
+            contents: currentContents,
+            systemInstruction,
+            tools: toolsConfig,
+            temperature: 0.2,
+          });
+
+          const candidate = response.candidates?.[0];
+          const modelContent = candidate?.content;
+          const functionCalls = response.functionCalls;
+
+          if (!functionCalls || functionCalls.length === 0) {
+            finalAnswer = response.text || '';
+            break;
+          }
+
+          currentContents.push(modelContent);
+
+          const functionResponseParts: any[] = [];
+          for (const call of functionCalls) {
+            const result = await handleToolExecution(call.name, call.args);
+            functionResponseParts.push({
+              functionResponse: {
+                name: call.name,
+                response: result,
+              },
+            });
+          }
+
+          currentContents.push({
+            role: 'user',
+            parts: functionResponseParts,
+          });
+        }
+      } catch (geminiError: any) {
+        const geminiMsg = String(geminiError?.message || geminiError);
+        console.warn('[Gemini API Warning]', geminiMsg);
+
+        const isQuotaOrOverload =
+          geminiMsg.includes('503') ||
+          geminiMsg.includes('high demand') ||
+          geminiMsg.includes('UNAVAILABLE') ||
+          geminiMsg.includes('429') ||
+          geminiMsg.includes('RESOURCE_EXHAUSTED') ||
+          geminiMsg.includes('quota') ||
+          geminiMsg.includes('Quota');
+
+        if (hasOpenAI && isQuotaOrOverload) {
+          console.log('[AI Fallback] Gemini indisponível ou limite de cota atingido. Alternando para OpenAI (GPT-4o)...');
+          const openai = getOpenAI();
+          if (openai) {
+            usedProvider = 'openai (fallback)';
+            finalAnswer = await runOpenAIChat({
+              openai,
+              systemInstruction,
+              history,
+              message,
+              handleTool: handleToolExecution,
+            });
+          } else {
+            throw geminiError;
+          }
+        } else {
+          if (isQuotaOrOverload) {
+            throw new Error(
+              hasOpenAI
+                ? `Erro ao comunicar com a IA: ${geminiMsg}`
+                : 'A cota temporária do Gemini foi atingida nos servidores da Google (429/Resource Exhausted). Você pode adicionar a chave OPENAI_API_KEY no painel de Segredos/Settings para usar a OpenAI (GPT-4o) como alternativa ou fallback automático imediato!'
+            );
+          }
+          throw geminiError;
+        }
+      }
     }
 
     return res.json({
@@ -928,6 +1294,7 @@ TOM:
       authExpired: isAuthExpired,
       authenticatedUser: sessionAuthUser,
       newRegisteredUser: sessionNewRegisteredUser,
+      providerUsed: usedProvider,
     });
   } catch (error: any) {
     console.error('Error in chat assistant:', error);
@@ -936,11 +1303,12 @@ TOM:
       msg.includes('503') ||
       msg.includes('high demand') ||
       msg.includes('UNAVAILABLE') ||
-      msg.includes('RESOURCE_EXHAUSTED');
+      msg.includes('RESOURCE_EXHAUSTED') ||
+      msg.includes('429');
 
-    const friendlyError = isOverloaded
-      ? 'O modelo de inteligência artificial está com alta demanda momentânea nos servidores da Google. Por favor, aguarde alguns instantes e tente novamente.'
-      : (error.message || 'Erro no assistente inteligente.');
+    const friendlyError = error.message || (isOverloaded
+      ? 'O modelo de inteligência artificial está com alta demanda momentânea nos servidores da Google. Por favor, aguarde alguns instantes ou adicione OPENAI_API_KEY como alternativa.'
+      : 'Erro no assistente inteligente.');
 
     return res.status(isOverloaded ? 503 : 500).json({
       error: friendlyError,
