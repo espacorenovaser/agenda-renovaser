@@ -78,12 +78,12 @@ const openAITools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           category: {
             type: 'string',
             enum: ['atendimento', 'reuniao', 'evento', 'comunicacao'],
-            description: 'Categoria do que está sendo agendado: "atendimento" (atendimento com hora marcada), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
+            description: 'Categoria do que está sendo agendado: "atendimento" (atendimento com hora marcada), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Encontros, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
           },
           eventSubtype: {
             type: 'string',
-            enum: ['workshop', 'treinamento', 'formacao', 'transmissao_online'],
-            description: 'Se a categoria for "evento", especifique obrigatoriamente o subtipo: "workshop", "treinamento", "formacao" ou "transmissao_online"',
+            enum: ['workshop', 'treinamento', 'formacao', 'transmissao_online', 'geral'],
+            description: 'Opcional. Subtipo do evento: "workshop", "treinamento", "formacao", "transmissao_online" ou "geral". Se for um evento geral como "Sábado do Cuidado", vivência ou encontro comunitário, use "geral" ou deixe vazio. NUNCA classifique como "formacao" a menos que o usuário tenha dito expressamente essa palavra.',
           },
           startDateTime: {
             type: 'string',
@@ -262,13 +262,17 @@ async function runOpenAIChat({
 
   while (maxTurns > 0) {
     maxTurns--;
-    const completion = await openai.chat.completions.create({
-      model: modelName,
-      messages,
-      tools: openAITools,
-      tool_choice: 'auto',
-      temperature: 0.2,
-    });
+    const completion = await withTimeout(
+      openai.chat.completions.create({
+        model: modelName,
+        messages,
+        tools: openAITools,
+        tool_choice: 'auto',
+        temperature: 0.2,
+      }),
+      12000,
+      'OpenAI Completion'
+    );
 
     const choice = completion.choices?.[0];
     const choiceMessage = choice?.message;
@@ -465,12 +469,12 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  // Fast, responsive models:
-  // 1. gemini-3.5-flash-lite (ultra-fast, ~700ms, lowest latency)
-  // 2. gemini-3.6-flash (standard flash model, exceptional tool-calling fallback)
+  // Fast, valid models supported by @google/genai:
+  // 1. gemini-3.8-flash (official primary flash model)
+  // 2. gemini-3.1-flash-lite (fast lightweight fallback)
   const candidateModels = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
   ];
   let lastError: any = null;
 
@@ -558,13 +562,13 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
           },
           category: {
             type: Type.STRING,
-            description: 'Categoria do que está sendo agendado: "atendimento" (atendimento com hora marcada), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
+            description: 'Categoria do que está sendo agendado: "atendimento" (atendimento com hora marcada), "reuniao" (tempo flexível conforme necessidade), "evento" (Workshops, Treinamentos, Formações, Encontros, Transmissões on-line) ou "comunicacao" (comunicado oficial, aviso ou informe para a equipe)',
             enum: ['atendimento', 'reuniao', 'evento', 'comunicacao'],
           },
           eventSubtype: {
             type: Type.STRING,
-            description: 'Se a categoria for "evento", especifique obrigatoriamente o subtipo: "workshop", "treinamento", "formacao" ou "transmissao_online"',
-            enum: ['workshop', 'treinamento', 'formacao', 'transmissao_online'],
+            description: 'Opcional. Subtipo do evento: "workshop", "treinamento", "formacao", "transmissao_online" ou "geral". Se for um evento geral como "Sábado do Cuidado", vivência ou encontro comunitário, use "geral" ou deixe vazio. NUNCA classifique como "formacao" a menos que o usuário tenha dito expressamente essa palavra.',
+            enum: ['workshop', 'treinamento', 'formacao', 'transmissao_online', 'geral'],
           },
           startDateTime: {
             type: Type.STRING,
@@ -741,6 +745,10 @@ FUNCIONALIDADES DO PROFISSIONAL:
 REGRAS DE AGENDAMENTO:
 - Duração: flexível conforme o horário informado pelo usuário ou profissional. Fuso: America/Sao_Paulo (GMT-3).
 - Data e hora de referência atual: ${nowIso || new Date().toISOString()} (America/Sao_Paulo).
+- CLASSIFICAÇÃO DE EVENTOS (MUITO IMPORTANTE):
+  * NUNCA rotule um evento como 'Formação', 'Workshop' ou 'Treinamento' a menos que o usuário tenha usado explicitamente essa palavra.
+  * Eventos como 'Sábado do Cuidado', encontros com a comunidade, vivências e ações integrativas são eventos gerais: use category: 'evento' e subtipo 'geral' (ou deixe vazio). O título deve ser simplesmente 'Sábado do Cuidado' ou '[Evento] Sábado do Cuidado'.
+  * Se o usuário disser que o evento 'não é formação' ou pedir para alterar/corrigir um agendamento existente (por exemplo, remover '[Evento: Formação]' de 'Sábado do Cuidado'), use IMEDIATAMENTE a ferramenta 'requestEventUpdate' informando o eventId e 'newTitle' para que o usuário confirme com um clique a correção do nome!
 - ANTES de confirmar qualquer agendamento, verifique CONFLITOS:
   * Se o profissional já tem outro atendimento no mesmo horário → AVISE e sugira alternativas.
   * Se a sala do instituto já está ocupada naquele horário → AVISE e sugira alternativas.
@@ -944,18 +952,29 @@ TOM:
               formattedTitle = `[Reunião] ${formattedTitle}`;
             }
           } else if (category === 'evento') {
-            const subName =
-              subtype === 'workshop'
-                ? 'Workshop'
-                : subtype === 'treinamento'
-                ? 'Treinamento'
-                : subtype === 'formacao'
-                ? 'Formação'
-                : subtype === 'transmissao_online'
-                ? 'Transmissão on-line'
-                : 'Geral';
-            if (!formattedTitle.toLowerCase().includes(subName.toLowerCase())) {
-              formattedTitle = `[Evento: ${subName}] ${formattedTitle}`;
+            const hasExplicitSubtype =
+              subtype === 'workshop' ||
+              subtype === 'treinamento' ||
+              subtype === 'formacao' ||
+              subtype === 'transmissao_online';
+
+            if (hasExplicitSubtype) {
+              const subName =
+                subtype === 'workshop'
+                  ? 'Workshop'
+                  : subtype === 'treinamento'
+                  ? 'Treinamento'
+                  : subtype === 'formacao'
+                  ? 'Formação'
+                  : 'Transmissão on-line';
+              if (!formattedTitle.toLowerCase().includes(subName.toLowerCase())) {
+                formattedTitle = `[Evento: ${subName}] ${formattedTitle}`;
+              }
+            } else {
+              // General institutional event (e.g. Sábado do Cuidado)
+              if (!formattedTitle.toLowerCase().includes('[evento]') && !formattedTitle.toLowerCase().includes('evento')) {
+                formattedTitle = `[Evento] ${formattedTitle}`;
+              }
             }
           } else if (category === 'comunicacao') {
             if (!formattedTitle.toLowerCase().includes('comunicado') && !formattedTitle.toLowerCase().includes('comunicação')) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import {
   Calendar,
@@ -88,6 +88,17 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<MeetingAuditLog[]>([]);
   const [isLogsLoading, setIsLogsLoading] = useState(false);
   const [isTokenExpired, setIsTokenExpired] = useState(false);
+
+  // Chat timeout and cancellation ref
+  const chatAbortCtrlRef = useRef<AbortController | null>(null);
+
+  const handleCancelChat = () => {
+    if (chatAbortCtrlRef.current) {
+      chatAbortCtrlRef.current.abort();
+      chatAbortCtrlRef.current = null;
+    }
+    setIsChatLoading(false);
+  };
 
   // Initialize auth listener
   useEffect(() => {
@@ -339,6 +350,12 @@ export default function App() {
 
     setIsChatLoading(true);
 
+    const abortCtrl = new AbortController();
+    chatAbortCtrlRef.current = abortCtrl;
+    const timeoutTimer = setTimeout(() => {
+      abortCtrl.abort();
+    }, 22000); // 22s safety timeout
+
     try {
       // Build short history for server context (filter out error messages, empty lines, and retry error)
       const historyContext = messages
@@ -363,6 +380,7 @@ export default function App() {
           registeredUsers: getRegisteredUsers(),
           currentEvents: events,
         }),
+        signal: abortCtrl.signal,
       });
 
       if (!res.ok) {
@@ -484,7 +502,9 @@ export default function App() {
       }
 
       let userText = err.message || 'Erro temporário na comunicação com o assistente.';
-      if (isHighDemand) {
+      if (err.name === 'AbortError' || msg.includes('aborted') || msg.includes('Timeout')) {
+        userText = 'A consulta demorou para responder nos servidores de IA. Clique em "Tentar novamente" abaixo para reprocessar sua mensagem imediatamente.';
+      } else if (isHighDemand) {
         userText = 'O assistente de inteligência artificial está temporariamente sobrecarregado nos servidores da Google. Por favor, clique em "Tentar novamente" abaixo ou adicione a chave OPENAI_API_KEY no painel para contingência automática.';
       } else if (isAuthError) {
         userText = 'Sua sessão com o Google Agenda expirou por segurança (validade padrão de 1 hora da Google). Clique no botão abaixo para reconectar sua conta com um clique.';
@@ -501,6 +521,10 @@ export default function App() {
       };
       setMessages((prev) => [...prev, errMsg]);
     } finally {
+      clearTimeout(timeoutTimer);
+      if (chatAbortCtrlRef.current === abortCtrl) {
+        chatAbortCtrlRef.current = null;
+      }
       setIsChatLoading(false);
     }
   };
@@ -906,6 +930,7 @@ export default function App() {
                   isTokenExpired={isTokenExpired}
                   activeUser={activeUser}
                   onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                  onCancelLoading={handleCancelChat}
                 />
               </div>
             </div>

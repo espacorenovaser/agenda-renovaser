@@ -38,6 +38,7 @@ interface ChatAssistantProps {
   isTokenExpired?: boolean;
   activeUser?: AppUser | null;
   onOpenAuthModal?: () => void;
+  onCancelLoading?: () => void;
 }
 
 export const ChatAssistant: React.FC<ChatAssistantProps> = ({
@@ -53,6 +54,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   isTokenExpired,
   activeUser,
   onOpenAuthModal,
+  onCancelLoading,
 }) => {
   const [inputText, setInputText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -474,9 +476,21 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             <div className="w-7 h-7 rounded-lg bg-white text-emerald-700 border border-slate-200 flex items-center justify-center text-xs font-semibold shadow-2xs">
               <Bot className="w-4 h-4" />
             </div>
-            <div className="bg-white rounded-2xl p-3.5 rounded-tl-xs border border-slate-200 flex items-center space-x-2 text-xs text-slate-600 shadow-xs">
-              <Loader2 className="w-4 h-4 animate-spin text-emerald-700" />
-              <span>Consultando agenda e regras do RenovaSer...</span>
+            <div className="bg-white rounded-2xl p-3.5 rounded-tl-xs border border-slate-200 flex items-center space-x-3 text-xs text-slate-600 shadow-xs">
+              <div className="flex items-center space-x-2">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-700 shrink-0" />
+                <span>Consultando agenda e regras do RenovaSer...</span>
+              </div>
+              {onCancelLoading && (
+                <button
+                  type="button"
+                  onClick={onCancelLoading}
+                  className="px-2 py-0.5 text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 cursor-pointer transition-colors shrink-0"
+                  title="Cancelar espera e tentar novamente"
+                >
+                  Cancelar
+                </button>
+              )}
             </div>
           </div>
         )}
