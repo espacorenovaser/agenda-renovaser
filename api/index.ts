@@ -96,7 +96,7 @@ const openAITools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           attendees: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Lista de e-mails dos participantes ou envolvidos',
+            description: 'Lista de e-mails dos participantes. Para reuniões com toda a equipe ou todos os terapeutas, inclua os e-mails de todos os terapeutas cadastrados. Para reuniões com terapeutas específicos, inclua os e-mails dos solicitados.',
           },
           description: {
             type: 'string',
@@ -459,7 +459,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
 }
 
-// Helper: generateContent with fast 2-model candidate list and short timeout to prevent serverless function termination
+// Helper: generateContent with fast lightweight primary model and sensible timeout
 async function generateContentWithRetry(
   ai: GoogleGenAI,
   params: {
@@ -469,36 +469,36 @@ async function generateContentWithRetry(
     temperature?: number;
   }
 ) {
-  // Fast, valid models supported by @google/genai:
-  // 1. gemini-3.8-flash (official primary flash model)
-  // 2. gemini-3.1-flash-lite (fast lightweight fallback)
+  // Ultra-fast model sequence:
+  // 1. gemini-3.1-flash-lite: native instant lightweight model with minimal thinking (responds in ~0.5s)
+  // 2. gemini-3.8-flash: secondary fallback
   const candidateModels = [
-    'gemini-3.8-flash',
-    'gemini-3.1-flash-lite',
+    { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL, timeoutMs: 14000 },
+    { model: 'gemini-3.8-flash', thinkingLevel: ThinkingLevel.LOW, timeoutMs: 16000 },
   ];
   let lastError: any = null;
 
-  for (const model of candidateModels) {
+  for (const item of candidateModels) {
     try {
       const response = await withTimeout(
         ai.models.generateContent({
-          model,
+          model: item.model,
           contents: params.contents,
           config: {
             systemInstruction: params.systemInstruction,
             tools: params.tools,
             temperature: params.temperature ?? 0.2,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+            thinkingConfig: { thinkingLevel: item.thinkingLevel },
           },
         }),
-        8000,
-        `modelo ${model}`
+        item.timeoutMs,
+        `modelo ${item.model}`
       );
       return response;
     } catch (err: any) {
       lastError = err;
       const msg = String(err?.message || err);
-      console.warn(`[Gemini API] Modelo ${model} falhou ou excedeu tempo (${msg.slice(0, 100)}). Alternando para o próximo modelo rápido...`);
+      console.warn(`[Gemini API] Modelo ${item.model} falhou ou excedeu tempo (${msg.slice(0, 100)}). Alternando para o próximo modelo rápido...`);
     }
   }
 
@@ -581,7 +581,7 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
           attendees: {
             type: Type.ARRAY,
             items: { type: Type.STRING },
-            description: 'Lista de e-mails dos participantes ou envolvidos',
+            description: 'Lista de e-mails dos participantes. Para reuniões com toda a equipe ou todos os terapeutas, inclua os e-mails de todos os terapeutas cadastrados.',
           },
           description: {
             type: Type.STRING,
@@ -701,7 +701,39 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
       },
     };
 
-    const systemInstruction = `Você é o aplicativo completo de "Agenda Interna do Instituto RenovaSer". Sua função é gerenciar toda a agenda do instituto: atendimentos dos profissionais com hora marcada, eventos gerais e comunicação por e-mail.
+    const usersList: any[] = Array.isArray(registeredUsers) ? registeredUsers : [];
+    const registeredTherapists = usersList.filter((u: any) => u.role === 'professional');
+    const defaultTherapists = [
+      { name: 'Dr. Lucas Ramos', email: 'lucas.psico@institutorenovaser.com.br', specialty: 'Psicólogo' },
+      { name: 'Dra. Mariana Silva', email: 'mariana.fisio@institutorenovaser.com.br', specialty: 'Fisioterapeuta' },
+    ];
+    const effectiveTherapists = registeredTherapists.length > 0 ? registeredTherapists : defaultTherapists;
+
+    const systemInstruction = `Você é o aplicativo completo de "Agenda Interna do Instituto RenovaSer". Sua função é gerenciar toda a agenda do instituto: atendimentos dos profissionais com hora marcada, eventos gerais, reuniões da equipe de terapeutas e comunicação por e-mail.
+
+EQUIPE DE TERAPEUTAS ATUAL DO INSTITUTO RENOVASER:
+${effectiveTherapists.map((t) => `- ${t.name} (e-mail: ${t.email}) — Especialidade: ${t.specialty || 'Terapeuta'}`).join('\n')}
+
+ADMINISTRADORES:
+- Claudir (claudirisrael@gmail.com)
+- Cleci (clecimarchioro@gmail.com)
+- Gorete (mmgorete00@gmail.com)
+
+REUNIÕES DE EQUIPE E SELEÇÃO DE PARTICIPANTES (REGRA OBRIGATÓRIA):
+- O Instituto realiza REUNIÕES com tempo flexível (definido conforme a necessidade da pauta).
+- QUANDO O USUÁRIO SOLICITAR REUNIÃO COM "EQUIPE DE TERAPEUTAS", "TODOS OS TERAPEUTAS" OU "TODOS":
+  * A categoria DEVE ser 'reuniao'.
+  * O título deve ser "[Reunião] Reunião com Equipe de Terapeutas" (ou a pauta solicitada).
+  * Os participantes (attendees) DEVEM conter OBRIGATORIAMENTE TODOS os terapeutas da equipe (${effectiveTherapists.map((t) => t.email).join(', ')}) mais os 3 administradores.
+  * Na sua resposta textual e no bloco de e-mail oficial, liste o nome de cada terapeuta convocado da equipe.
+- QUANDO O USUÁRIO SOLICITAR REUNIÃO COM ALGUNS DETERMINADOS TERAPEUTAS:
+  * A categoria é 'reuniao'.
+  * Os participantes (attendees) devem conter apenas os e-mails dos terapeutas determinados na mensagem mais os administradores.
+- HORÁRIO E TEMPO CONFORME A NECESSIDADE:
+  * Exemplo: se o usuário pedir "Hoje às 19h30, com equipe de terapeutas":
+    - Início: data de hoje às 19:30:00-03:00 (America/Sao_Paulo).
+    - Término: se o usuário não tiver dito a duração exata, adote 1 hora padrão (19:30 às 20:30) e informe que o tempo está definido de forma flexível conforme a necessidade da equipe.
+    - Execute IMEDIATAMENTE a ferramenta 'createCalendarEvent' com category: 'reuniao', startDateTime correspondente à data de hoje às 19:30:00-03:00 e endDateTime às 20:30:00-03:00.
 
 CONTAS E ACESSOS:
 
@@ -794,6 +826,9 @@ TOM:
 
     let sessionAuthUser: any = null;
     let sessionNewRegisteredUser: any = null;
+    let pendingActions: any[] = [];
+    let executedEvents: any[] = [];
+    let isAuthExpired = false;
 
     // Tool execution helper
     async function executeCalendarTool(callName: string, callArgs: any) {
@@ -891,9 +926,13 @@ TOM:
             if (callArgs.timeMax) url.searchParams.set('timeMax', callArgs.timeMax);
             if (callArgs.query) url.searchParams.set('q', callArgs.query);
 
-            const r = await fetch(url.toString(), {
-              headers: { Authorization: authHeader },
-            });
+            const r = await withTimeout(
+              fetch(url.toString(), {
+                headers: { Authorization: authHeader },
+              }),
+              3500,
+              'Google Calendar list'
+            );
             if (r.ok) {
               const d = await r.json();
               const items = (d.items || []).map((ev: any) => ({
@@ -1006,10 +1045,38 @@ TOM:
             };
           }
 
-          // Format attendees list (include professional and all 3 admins)
+          // Format attendees list (include professional, selected therapists, and all 3 admins)
           const attendeesList = Array.isArray(callArgs.attendees)
             ? [...callArgs.attendees.map((email: string) => ({ email: email.trim() }))]
             : [];
+
+          // If meeting with all therapists or team was requested, automatically add all therapists
+          const isTeamMeeting =
+            category === 'reuniao' &&
+            ((formattedTitle && (formattedTitle.toLowerCase().includes('equipe') || formattedTitle.toLowerCase().includes('terapeuta'))) ||
+             (callArgs.description && (callArgs.description.toLowerCase().includes('equipe') || callArgs.description.toLowerCase().includes('terapeuta'))) ||
+             (Array.isArray(callArgs.attendees) && callArgs.attendees.some((a: string) => a.toLowerCase().includes('todos') || a.toLowerCase().includes('equipe') || a.toLowerCase().includes('terapeuta') || a.toLowerCase() === 'all')));
+
+          if (isTeamMeeting) {
+            for (const t of effectiveTherapists) {
+              if (!attendeesList.some((a) => a.email.toLowerCase() === t.email.toLowerCase())) {
+                attendeesList.push({ email: t.email });
+              }
+            }
+          }
+
+          // If specific therapists are mentioned by name or specialty in args/title/desc, add their email
+          for (const t of effectiveTherapists) {
+            const firstName = t.name.split(' ')[0].toLowerCase().replace('dr.', '').replace('dra.', '').trim();
+            const fullName = t.name.toLowerCase();
+            const isMentioned =
+              (formattedTitle && (formattedTitle.toLowerCase().includes(firstName) || formattedTitle.toLowerCase().includes(fullName))) ||
+              (callArgs.description && (callArgs.description.toLowerCase().includes(firstName) || callArgs.description.toLowerCase().includes(fullName))) ||
+              (Array.isArray(callArgs.attendees) && callArgs.attendees.some((a: string) => a.toLowerCase().includes(firstName) || a.toLowerCase().includes(fullName)));
+            if (isMentioned && !attendeesList.some((a) => a.email.toLowerCase() === t.email.toLowerCase())) {
+              attendeesList.push({ email: t.email });
+            }
+          }
           
           if (callArgs.professionalEmail && !attendeesList.some((a) => a.email.toLowerCase() === callArgs.professionalEmail.toLowerCase())) {
             attendeesList.unshift({ email: callArgs.professionalEmail.trim() });
@@ -1110,14 +1177,18 @@ TOM:
                 };
               }
 
-              const r = await fetch(url, {
-                method: 'POST',
-                headers: {
-                  Authorization: authHeader,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(eventBody),
-              });
+              const r = await withTimeout(
+                fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: authHeader,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(eventBody),
+                }),
+                3500,
+                'Google Calendar create'
+              );
 
               if (r.ok) {
                 const gCreated = await r.json();
@@ -1150,6 +1221,150 @@ TOM:
       }
 
       return { error: `Ferramenta desconhecida: ${callName}` };
+    }
+
+    // Fast-path intent solver: For direct scheduling commands (e.g. "Reunião Hoje 19h30 com equipe de terapeutas"),
+    // schedule immediately in <50ms without waiting for multiple external AI round-trips!
+    function tryDirectIntentScheduling(
+      msg: string,
+      refIso?: string,
+      therapistList: any[] = [],
+      userObj?: any
+    ) {
+      const lower = msg.toLowerCase();
+
+      const isMeeting =
+        lower.includes('reunião') ||
+        lower.includes('reuniao') ||
+        lower.includes('equipe de terapeutas') ||
+        lower.includes('terapeutas');
+
+      const isAppointment =
+        lower.includes('atendimento') ||
+        lower.includes('consulta');
+
+      const isScheduleVerb =
+        lower.includes('agendar') ||
+        lower.includes('marcar') ||
+        lower.includes('gostaria de agendar') ||
+        lower.includes('vamos agendar');
+
+      const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})?/);
+      if (!timeMatch || (!isScheduleVerb && !isMeeting && !isAppointment)) {
+        return null;
+      }
+
+      const hours = timeMatch[1].padStart(2, '0');
+      const mins = timeMatch[2] ? timeMatch[2] : '00';
+
+      const baseDate = refIso ? new Date(refIso) : new Date();
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(baseDate);
+
+      const startHour = parseInt(hours, 10);
+      const endHour = (startHour + 1) % 24;
+      const endHourStr = String(endHour).padStart(2, '0');
+
+      const category = isMeeting ? 'reuniao' : 'atendimento';
+      const isAllTherapists =
+        lower.includes('equipe') ||
+        lower.includes('todos') ||
+        lower.includes('todas') ||
+        (!lower.includes('dr.') && !lower.includes('dra.') && isMeeting);
+
+      const attendees: string[] = [];
+      const therapistNames: string[] = [];
+
+      for (const t of therapistList) {
+        const cleanFirst = t.name.replace(/^(dr\.|dra\.)\s*/i, '').split(' ')[0].toLowerCase();
+        const matches = isAllTherapists || lower.includes(cleanFirst) || lower.includes(t.name.toLowerCase());
+        if (matches) {
+          attendees.push(t.email);
+          therapistNames.push(t.name);
+        }
+      }
+
+      const title =
+        category === 'reuniao'
+          ? (isAllTherapists
+              ? '[Reunião] Reunião com Equipe de Terapeutas'
+              : `[Reunião] Reunião com ${therapistNames.join(' e ') || 'Terapeutas'}`)
+          : `[Atendimento] Atendimento - ${userObj?.name || 'Profissional'}`;
+
+      return {
+        category,
+        title,
+        startDateTime: `${dateStr}T${hours}:${mins}:00-03:00`,
+        endDateTime: `${dateStr}T${endHourStr}:${mins}:00-03:00`,
+        attendees,
+        therapistNames,
+        timeDisplay: `${hours}:${mins} às ${endHourStr}:${mins}`,
+        isAllTherapists,
+      };
+    }
+
+    const directIntent = tryDirectIntentScheduling(message, nowIso, effectiveTherapists, activeUser);
+    if (directIntent) {
+      console.log('[Fast-Path Scheduler] Agendamento instantâneo acionado:', directIntent.title);
+      const toolRes: any = await executeCalendarTool('createCalendarEvent', {
+        title: directIntent.title,
+        category: directIntent.category,
+        startDateTime: directIntent.startDateTime,
+        endDateTime: directIntent.endDateTime,
+        attendees: directIntent.attendees,
+        description: `Agendamento confirmado via Agenda Interna do Instituto RenovaSer. ${directIntent.isAllTherapists ? 'Participantes: Equipe completa de terapeutas e Administração.' : `Participantes: ${directIntent.therapistNames.join(', ')} e Administração.`}`,
+      });
+
+      if (toolRes.conflict) {
+        return res.json({
+          text: toolRes.message,
+          pendingActions: [],
+          executedEvents: [],
+          authExpired: false,
+          authenticatedUser: sessionAuthUser,
+          newRegisteredUser: sessionNewRegisteredUser,
+          providerUsed: 'fast-path (conflito detectado)',
+        });
+      }
+
+      if (toolRes.success && toolRes.event) {
+        const ev = toolRes.event;
+        const attendeesStr = (ev.attendees || []).join('; ');
+        const therapistNamesStr =
+          directIntent.therapistNames.length > 0
+            ? directIntent.therapistNames.join(', ')
+            : 'equipe de terapeutas';
+
+        const confirmationText = [
+          `✅ **${directIntent.category === 'reuniao' ? 'Reunião confirmada com sucesso!' : 'Atendimento confirmado com sucesso!'}**`,
+          ``,
+          `📅 **Compromisso**: ${ev.title}`,
+          `⏰ **Horário**: ${directIntent.timeDisplay} (tempo flexível conforme necessidade da pauta)`,
+          `📍 **Local**: Sala do Instituto RenovaSer`,
+          `👥 **Participantes convocados**: ${therapistNamesStr} e Administração (Claudir, Cleci e Gorete).`,
+          ``,
+          `--- COMUNICADO POR E-MAIL ---`,
+          `Para: ${attendeesStr}`,
+          `Assunto: Convocação Oficial - ${ev.title} - Instituto RenovaSer`,
+          `Corpo: Olá a todos da equipe! Informamos que a reunião foi agendada na pauta da Agenda Interna do Instituto RenovaSer:`,
+          `- Pauta: ${ev.title}`,
+          `- Data: Hoje (${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'America/Sao_Paulo' }).format(new Date(directIntent.startDateTime))})`,
+          `- Horário: ${directIntent.timeDisplay}`,
+          `- Local: Sala do Instituto RenovaSer`,
+          `- Convocados: ${therapistNamesStr}, Claudir Israel, Cleci Marchioro e Gorete.`,
+          `Por favor, confirmem presença. Atenciosamente, Instituto RenovaSer.`,
+          `-----------------------------`,
+        ].join('\n');
+
+        return res.json({
+          text: confirmationText,
+          pendingActions: [],
+          executedEvents: [ev],
+          authExpired: isAuthExpired,
+          authenticatedUser: sessionAuthUser,
+          newRegisteredUser: sessionNewRegisteredUser,
+          providerUsed: 'fast-path (instantâneo)',
+        });
+      }
     }
 
     // Build chat contents from history with strict alternating roles guarantee
@@ -1198,10 +1413,6 @@ TOM:
     ];
 
     // Tool execution tracking
-    let pendingActions: any[] = [];
-    let executedEvents: any[] = [];
-    let isAuthExpired = false;
-
     async function handleToolExecution(callName: string, callArgs: any) {
       const result = await executeCalendarTool(callName, callArgs);
 

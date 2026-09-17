@@ -223,8 +223,20 @@ export default function App() {
     const profEmail = activeUser.email.toLowerCase();
     const profName = activeUser.name.toLowerCase();
     return events.filter((e) => {
-      // General institutional events are visible to all professionals
-      if (e.category === 'evento' || e.title?.toLowerCase().includes('[evento')) {
+      // General institutional events and communications are visible to all professionals
+      if (
+        e.category === 'evento' ||
+        e.category === 'comunicacao' ||
+        e.title?.toLowerCase().includes('[evento') ||
+        e.title?.toLowerCase().includes('[comunicação')
+      ) {
+        return true;
+      }
+      // Team meetings with the entire staff are visible to all professionals
+      if (
+        e.category === 'reuniao' &&
+        (e.title?.toLowerCase().includes('equipe') || e.description?.toLowerCase().includes('equipe'))
+      ) {
         return true;
       }
       const inAttendees = e.attendees?.some((att) => att.toLowerCase().includes(profEmail));
@@ -354,13 +366,13 @@ export default function App() {
     chatAbortCtrlRef.current = abortCtrl;
     const timeoutTimer = setTimeout(() => {
       abortCtrl.abort();
-    }, 22000); // 22s safety timeout
+    }, 45000); // 45s resilient safety timeout
 
     try {
-      // Build short history for server context (filter out error messages, empty lines, and retry error)
+      // Build short compact history for server context (filter out error messages, empty lines, and retry error)
       const historyContext = messages
         .filter((m) => !m.isError && m.id !== errorMsgId && m.content && m.content.trim())
-        .slice(-8)
+        .slice(-4)
         .map((m) => ({
           role: m.role === 'user' ? 'user' : 'model',
           text: m.content,

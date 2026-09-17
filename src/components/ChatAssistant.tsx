@@ -21,9 +21,13 @@ import {
   Briefcase,
   Tag,
   Trash2,
+  ChevronDown,
+  UserCheck,
+  Zap,
 } from 'lucide-react';
 import type { ChatMessage, PendingAction, AppUser } from '../types';
 import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import { getRegisteredUsers, type AppUserWithAuth } from '../lib/renovaserAuth';
 
 interface ChatAssistantProps {
   messages: ChatMessage[];
@@ -59,8 +63,76 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const [inputText, setInputText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [therapists, setTherapists] = useState<AppUserWithAuth[]>([]);
+  const [selectedTherapistEmails, setSelectedTherapistEmails] = useState<string[]>([]);
+  const [isAllTherapistsSelected, setIsAllTherapistsSelected] = useState<boolean>(true);
+  const [showParticipantSelector, setShowParticipantSelector] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load therapists list
+  useEffect(() => {
+    try {
+      const allUsers = getRegisteredUsers();
+      const profs = allUsers.filter((u) => u.role === 'professional');
+      setTherapists(profs);
+      setSelectedTherapistEmails(profs.map((p) => p.email.toLowerCase()));
+    } catch {
+      // Fallback
+    }
+  }, []);
+
+  const handleToggleAllTherapists = () => {
+    if (isAllTherapistsSelected) {
+      setIsAllTherapistsSelected(false);
+      setSelectedTherapistEmails([]);
+    } else {
+      setIsAllTherapistsSelected(true);
+      setSelectedTherapistEmails(therapists.map((t) => t.email.toLowerCase()));
+    }
+  };
+
+  const handleToggleSingleTherapist = (email: string) => {
+    const norm = email.toLowerCase();
+    if (isAllTherapistsSelected) {
+      setIsAllTherapistsSelected(false);
+      setSelectedTherapistEmails([norm]);
+    } else {
+      let updated: string[];
+      if (selectedTherapistEmails.includes(norm)) {
+        updated = selectedTherapistEmails.filter((e) => e !== norm);
+      } else {
+        updated = [...selectedTherapistEmails, norm];
+      }
+      setSelectedTherapistEmails(updated);
+      if (updated.length === therapists.length && therapists.length > 0) {
+        setIsAllTherapistsSelected(true);
+      }
+    }
+  };
+
+  const handleInsertMeetingPrompt = (timeStr: string = 'Hoje às 19h30') => {
+    let participantDesc = '';
+    if (
+      isAllTherapistsSelected ||
+      selectedTherapistEmails.length === 0 ||
+      selectedTherapistEmails.length === therapists.length
+    ) {
+      participantDesc = 'equipe de terapeutas';
+    } else {
+      const selectedObjs = therapists.filter((t) =>
+        selectedTherapistEmails.includes(t.email.toLowerCase())
+      );
+      participantDesc =
+        selectedObjs.length > 0
+          ? selectedObjs.map((t) => t.name).join(' e ')
+          : 'equipe de terapeutas';
+    }
+
+    const prompt = `Gostaria de agendar uma Reunião com tempo definido conforme a necessidade. ${timeStr}, com ${participantDesc}.`;
+    setInputText(prompt);
+    textareaRef.current?.focus();
+  };
 
   // Sync prefilledInput if provided
   useEffect(() => {
@@ -110,11 +182,14 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   };
 
   const handleQuickSchedulePrompt = (category: string) => {
+    if (category === 'reuniao') {
+      setShowParticipantSelector(true);
+      handleInsertMeetingPrompt('Hoje às 19h30');
+      return;
+    }
     let prompt = '';
     if (category === 'atendimento') {
       prompt = 'Gostaria de agendar um atendimento na sala do Instituto RenovaSer.';
-    } else if (category === 'reuniao') {
-      prompt = 'Gostaria de agendar uma reunião de alinhamento com a equipe no Instituto RenovaSer.';
     } else if (category === 'comunicacao') {
       prompt = 'Gostaria de registrar uma comunicação/aviso oficial para a equipe do Instituto RenovaSer.';
     } else if (category === 'workshop') {
@@ -347,7 +422,15 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                       >
                         <div className="flex items-center space-x-2 text-emerald-800 font-bold mb-1">
                           <CalendarCheck className="w-4 h-4 text-emerald-600" />
-                          <span>Atendimento confirmado na agenda!</span>
+                          <span>
+                            {ev.category === 'reuniao'
+                              ? 'Reunião confirmada na agenda!'
+                              : ev.category === 'evento'
+                              ? 'Evento confirmado na agenda!'
+                              : ev.category === 'comunicacao'
+                              ? 'Comunicado registrado!'
+                              : 'Atendimento confirmado na agenda!'}
+                          </span>
                         </div>
                         <p className="font-bold text-slate-900 text-sm">{ev.title}</p>
                         <p className="text-slate-600 mt-1 flex items-center space-x-1.5">
@@ -580,6 +663,108 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           >
             + Transmissão on-line
           </button>
+        </div>
+
+        {/* Meeting Participant Selector Toolbar */}
+        <div className="mb-2.5 p-2 bg-emerald-50/70 border border-emerald-200/80 rounded-xl text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+            <div className="flex items-center space-x-1.5 text-emerald-950 font-bold">
+              <Users className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span>Participantes da Reunião:</span>
+            </div>
+
+            <div className="flex items-center space-x-1">
+              <button
+                type="button"
+                onClick={handleToggleAllTherapists}
+                className={`px-2 py-0.5 rounded-md font-bold text-[11px] transition-colors border cursor-pointer ${
+                  isAllTherapistsSelected
+                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+                title="Convidar toda a equipe de terapeutas"
+              >
+                👥 Todos os Terapeutas ({therapists.length})
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {therapists.map((t) => {
+              const isSelected =
+                isAllTherapistsSelected ||
+                selectedTherapistEmails.includes(t.email.toLowerCase());
+              return (
+                <button
+                  key={t.id || t.email}
+                  type="button"
+                  onClick={() => handleToggleSingleTherapist(t.email.toLowerCase())}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-white text-emerald-950 border-emerald-400 ring-1 ring-emerald-500/20 shadow-2xs'
+                      : 'bg-slate-100/80 text-slate-500 border-slate-200 hover:bg-slate-200/60'
+                  }`}
+                  title={`${t.name} (${t.specialty || 'Terapeuta'}) - Clique para marcar ou desmarcar`}
+                >
+                  <span
+                    className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      isSelected
+                        ? 'bg-emerald-700 text-white'
+                        : 'bg-slate-300 text-slate-600'
+                    }`}
+                  >
+                    {isSelected ? '✓' : t.name.slice(0, 1)}
+                  </span>
+                  <span>{t.name}</span>
+                  <span className="text-[10px] opacity-75 font-normal">
+                    ({t.specialty || 'Terapeuta'})
+                  </span>
+                </button>
+              );
+            })}
+
+            <div className="ml-auto flex items-center space-x-1.5">
+              <button
+                type="button"
+                onClick={() => handleInsertMeetingPrompt('Hoje às 19h30')}
+                className="px-2 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs transition-colors flex items-center space-x-1 cursor-pointer"
+                title="Inserir texto da reunião no campo de digitação"
+              >
+                <Clock className="w-3 h-3 text-slate-500" />
+                <span>Preencher 19h30</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  let participantDesc = '';
+                  if (
+                    isAllTherapistsSelected ||
+                    selectedTherapistEmails.length === 0 ||
+                    selectedTherapistEmails.length === therapists.length
+                  ) {
+                    participantDesc = 'equipe de terapeutas';
+                  } else {
+                    const selectedObjs = therapists.filter((t) =>
+                      selectedTherapistEmails.includes(t.email.toLowerCase())
+                    );
+                    participantDesc =
+                      selectedObjs.length > 0
+                        ? selectedObjs.map((t) => t.name).join(' e ')
+                        : 'equipe de terapeutas';
+                  }
+                  const prompt = `Gostaria de agendar uma Reunião com tempo definido conforme a necessidade. Hoje às 19h30, com ${participantDesc}.`;
+                  onSendMessage(prompt);
+                }}
+                disabled={isLoading}
+                className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xs transition-colors flex items-center space-x-1 shadow-2xs cursor-pointer"
+                title="Agendar imediatamente hoje às 19h30 com os participantes selecionados sem esperar"
+              >
+                <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
+                <span>⚡ Agendar Reunião 19h30</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex items-end space-x-2.5">
