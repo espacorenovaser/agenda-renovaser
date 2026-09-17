@@ -587,6 +587,19 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
             type: Type.STRING,
             description: 'Pauta, detalhes ou observações do agendamento',
           },
+          pauta: {
+            type: Type.STRING,
+            description: 'Pauta ou assunto detalhado da reunião ou atendimento',
+          },
+          format: {
+            type: Type.STRING,
+            description: 'Formato: "presencial" (na Sala do Instituto RenovaSer) ou "online" (via Google Meet)',
+            enum: ['presencial', 'online'],
+          },
+          location: {
+            type: Type.STRING,
+            description: 'Local do compromisso. Ex: "Sala do Instituto RenovaSer" ou "Online - Google Meet"',
+          },
           createMeetLink: {
             type: Type.BOOLEAN,
             description: 'Define se deve gerar automaticamente um link de videoconferência do Google Meet (recomendado para Transmissões on-line e reuniões remotas)',
@@ -721,6 +734,18 @@ ADMINISTRADORES:
 
 REUNIÕES DE EQUIPE E SELEÇÃO DE PARTICIPANTES (REGRA OBRIGATÓRIA):
 - O Instituto realiza REUNIÕES com tempo flexível (definido conforme a necessidade da pauta).
+- CONFIRMAÇÃO OBRIGATÓRIA DO FORMATO (ONLINE OU PRESENCIAL):
+  * Toda vez que for marcar ou sugerir uma REUNIÃO (ou atendimento/evento), você DEVE SEMPRE confirmar se o formato será PRESENCIAL (na Sala do Instituto RenovaSer) ou ONLINE (via Google Meet).
+  * Para atendimentos, o padrão usual é presencial na sala do instituto, mas você deve sempre confirmar o formato e local na resposta.
+  * Para reuniões: sempre identifique a PAUTA DA REUNIÃO e confirme se é Presencial ou Online com Google Meet.
+  * Se o formato for Online: gere meetLink ou use 'Online - Google Meet'.
+  * Se for Presencial: local 'Sala do Instituto RenovaSer'.
+- REGISTRO DA PAUTA NO EVENTO (SEM BOILERPLATE):
+  * No campo description do evento, registre de forma limpa:
+    Pauta: [Pauta informada pelo usuário]
+    Formato: [Presencial na Sala do Instituto ou Online via Google Meet]
+    Participantes: [Nomes e e-mails convocados]
+  * NUNCA inclua termos como "Modalidade: Reunião (Tempo definido conforme necessidade)" na descrição do evento.
 - QUANDO O USUÁRIO SOLICITAR REUNIÃO COM "EQUIPE DE TERAPEUTAS", "TODOS OS TERAPEUTAS" OU "TODOS":
   * A categoria DEVE ser 'reuniao'.
   * O título deve ser "[Reunião] Reunião com Equipe de Terapeutas" (ou a pauta solicitada).
@@ -1093,31 +1118,57 @@ TOM:
             }
           }
 
-          const categoryHeader =
-            category === 'atendimento'
-              ? 'Modalidade: Atendimento com Hora Marcada'
-              : category === 'reuniao'
-              ? 'Modalidade: Reunião (Tempo definido conforme necessidade)'
-              : category === 'comunicacao'
-              ? 'Modalidade: Comunicação Oficial da Equipe'
-              : `Modalidade: Evento - ${
-                  subtype === 'workshop'
-                    ? 'Workshop'
-                    : subtype === 'treinamento'
-                    ? 'Treinamento'
-                    : subtype === 'formacao'
-                    ? 'Formação'
-                    : subtype === 'transmissao_online'
-                    ? 'Transmissão on-line'
-                    : 'Evento Institucional'
-                }`;
+          const isOnline =
+            Boolean(callArgs.createMeetLink) ||
+            subtype === 'transmissao_online' ||
+            callArgs.format === 'online' ||
+            (callArgs.location && callArgs.location.toLowerCase().includes('online')) ||
+            (callArgs.location && callArgs.location.toLowerCase().includes('meet')) ||
+            (callArgs.description && callArgs.description.toLowerCase().includes('online')) ||
+            (callArgs.description && callArgs.description.toLowerCase().includes('google meet')) ||
+            formattedTitle.toLowerCase().includes('online');
+
+          const formatLabel = isOnline ? 'Online (Google Meet)' : 'Presencial (Sala do Instituto RenovaSer)';
+          const locationStr = isOnline
+            ? 'Online - Google Meet'
+            : callArgs.location && !callArgs.location.toLowerCase().includes('modalidade')
+            ? callArgs.location
+            : 'Sala do Instituto RenovaSer';
+
+          let pautaStr = callArgs.pauta || callArgs.agendaTopic || '';
+          if (!pautaStr && callArgs.description) {
+            const pautaMatch = callArgs.description.match(/pauta:\s*([^\n\r]+)/i);
+            if (pautaMatch && pautaMatch[1]) {
+              pautaStr = pautaMatch[1].trim();
+            } else {
+              const cleanDesc = callArgs.description
+                .replace(/Modalidade:\s*[^\n\r]+/gi, '')
+                .replace(/Profissional Responsável:\s*[^\n\r]+/gi, '')
+                .replace(/Local:\s*[^\n\r]+/gi, '')
+                .replace(/Instituto RenovaSer • Agenda Interna Oficial/gi, '')
+                .replace(/Agendamento confirmado via Agenda Interna do Instituto RenovaSer\.?/gi, '')
+                .replace(/Participantes:\s*[^\n\r]+/gi, '')
+                .trim();
+              if (cleanDesc) pautaStr = cleanDesc;
+            }
+          }
+
+          if (!pautaStr) {
+            if (category === 'reuniao') {
+              pautaStr = 'Discussão de pautas e planejamento da equipe';
+            } else if (category === 'atendimento') {
+              pautaStr = 'Atendimento clínico com hora marcada';
+            } else {
+              pautaStr = formattedTitle;
+            }
+          }
 
           const fullDescription = [
-            categoryHeader,
+            `Pauta: ${pautaStr}`,
+            `Formato: ${formatLabel}`,
+            `Local: ${locationStr}`,
             callArgs.professionalName ? `Profissional Responsável: ${callArgs.professionalName}` : '',
-            callArgs.description || '',
-            'Local: Sala do Instituto RenovaSer',
-            'Instituto RenovaSer • Agenda Interna Oficial',
+            attendeesList.length > 0 ? `Participantes: ${attendeesList.map((a: any) => a.email).join(', ')}` : '',
           ]
             .filter(Boolean)
             .join('\n\n');
@@ -1137,11 +1188,11 @@ TOM:
             start: callArgs.startDateTime,
             end: callArgs.endDateTime,
             attendees: attendeesList.map((a: any) => a.email),
-            meetLink: callArgs.createMeetLink || subtype === 'transmissao_online' ? 'https://meet.google.com/rnv-sala-ofc' : null,
+            meetLink: isOnline ? 'https://meet.google.com/rnv-sala-ofc' : null,
             category,
             eventSubtype: subtype,
             description: fullDescription,
-            location: 'Sala do Instituto RenovaSer',
+            location: locationStr,
             professionalName: callArgs.professionalName,
             professionalEmail: callArgs.professionalEmail,
             googleCalendarUrl: googleTemplateUrl,
@@ -1271,6 +1322,36 @@ TOM:
         lower.includes('todas') ||
         (!lower.includes('dr.') && !lower.includes('dra.') && isMeeting);
 
+      const isOnline =
+        lower.includes('online') ||
+        lower.includes('meet') ||
+        lower.includes('remoto') ||
+        lower.includes('virtual') ||
+        lower.includes('videoconferência') ||
+        lower.includes('videoconferencia');
+
+      const format = isOnline ? 'online' : 'presencial';
+      const formatDisplay = isOnline ? 'Online (via Google Meet)' : 'Presencial (na Sala do Instituto RenovaSer)';
+      const location = isOnline ? 'Online - Google Meet' : 'Sala do Instituto RenovaSer';
+
+      // Extract pauta if present
+      let pauta = '';
+      const pautaMatch = msg.match(/pauta:\s*([^\n\r.]+)/i);
+      if (pautaMatch && pautaMatch[1]) {
+        pauta = pautaMatch[1].trim();
+      } else {
+        const sobreMatch = msg.match(/(?:sobre|para discussão de|discutir|assunto:?)\s+([^\n\r.]+)/i);
+        if (sobreMatch && sobreMatch[1]) {
+          pauta = sobreMatch[1].trim();
+        }
+      }
+
+      if (!pauta) {
+        pauta = isMeeting
+          ? 'Discussão de casos e planejamento com a equipe de terapeutas'
+          : 'Atendimento clínico com hora marcada';
+      }
+
       const attendees: string[] = [];
       const therapistNames: string[] = [];
 
@@ -1299,6 +1380,11 @@ TOM:
         therapistNames,
         timeDisplay: `${hours}:${mins} às ${endHourStr}:${mins}`,
         isAllTherapists,
+        isOnline,
+        format,
+        formatDisplay,
+        location,
+        pauta,
       };
     }
 
@@ -1311,7 +1397,11 @@ TOM:
         startDateTime: directIntent.startDateTime,
         endDateTime: directIntent.endDateTime,
         attendees: directIntent.attendees,
-        description: `Agendamento confirmado via Agenda Interna do Instituto RenovaSer. ${directIntent.isAllTherapists ? 'Participantes: Equipe completa de terapeutas e Administração.' : `Participantes: ${directIntent.therapistNames.join(', ')} e Administração.`}`,
+        format: directIntent.format,
+        pauta: directIntent.pauta,
+        location: directIntent.location,
+        createMeetLink: directIntent.isOnline,
+        description: `Pauta: ${directIntent.pauta}\nFormato: ${directIntent.formatDisplay}\nLocal: ${directIntent.location}`,
       });
 
       if (toolRes.conflict) {
@@ -1338,22 +1428,25 @@ TOM:
           `✅ **${directIntent.category === 'reuniao' ? 'Reunião confirmada com sucesso!' : 'Atendimento confirmado com sucesso!'}**`,
           ``,
           `📅 **Compromisso**: ${ev.title}`,
+          `📋 **Pauta**: ${directIntent.pauta}`,
+          `📍 **Formato e Local**: ${directIntent.formatDisplay}`,
           `⏰ **Horário**: ${directIntent.timeDisplay} (tempo flexível conforme necessidade da pauta)`,
-          `📍 **Local**: Sala do Instituto RenovaSer`,
           `👥 **Participantes convocados**: ${therapistNamesStr} e Administração (Claudir, Cleci e Gorete).`,
+          directIntent.isOnline ? `🔗 **Link de Vídeo**: Google Meet integrado` : '',
           ``,
           `--- COMUNICADO POR E-MAIL ---`,
           `Para: ${attendeesStr}`,
           `Assunto: Convocação Oficial - ${ev.title} - Instituto RenovaSer`,
           `Corpo: Olá a todos da equipe! Informamos que a reunião foi agendada na pauta da Agenda Interna do Instituto RenovaSer:`,
-          `- Pauta: ${ev.title}`,
+          `- Pauta: ${directIntent.pauta}`,
+          `- Formato: ${directIntent.formatDisplay}`,
           `- Data: Hoje (${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'America/Sao_Paulo' }).format(new Date(directIntent.startDateTime))})`,
           `- Horário: ${directIntent.timeDisplay}`,
-          `- Local: Sala do Instituto RenovaSer`,
+          `- Local: ${directIntent.location}`,
           `- Convocados: ${therapistNamesStr}, Claudir Israel, Cleci Marchioro e Gorete.`,
           `Por favor, confirmem presença. Atenciosamente, Instituto RenovaSer.`,
           `-----------------------------`,
-        ].join('\n');
+        ].filter(Boolean).join('\n');
 
         return res.json({
           text: confirmationText,

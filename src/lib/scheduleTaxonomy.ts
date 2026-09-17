@@ -227,3 +227,89 @@ export function classifyCalendarEvent(ev: CalendarEvent): ClassifiedEventInfo {
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold',
   };
 }
+
+export interface ParsedEventDetails {
+  pauta: string;
+  format: 'presencial' | 'online';
+  formatLabel: string;
+  locationLabel: string;
+  isOnline: boolean;
+  cleanDescription?: string;
+}
+
+export function parseEventDetails(ev: CalendarEvent): ParsedEventDetails {
+  const desc = ev.description || '';
+  const title = ev.title || '';
+  const loc = ev.location || '';
+  const hasMeet = !!ev.meetLink;
+
+  // Determine format: online vs presencial
+  const isOnline =
+    hasMeet ||
+    loc.toLowerCase().includes('online') ||
+    loc.toLowerCase().includes('meet') ||
+    desc.toLowerCase().includes('online') ||
+    desc.toLowerCase().includes('google meet') ||
+    desc.toLowerCase().includes('videoconferência') ||
+    title.toLowerCase().includes('online') ||
+    ev.eventSubtype === 'transmissao_online';
+
+  const format: 'presencial' | 'online' = isOnline ? 'online' : 'presencial';
+  const formatLabel = isOnline ? 'Online (Google Meet)' : 'Presencial';
+  const locationLabel = isOnline
+    ? 'Online • Google Meet'
+    : loc && !loc.toLowerCase().includes('modalidade')
+    ? loc
+    : 'Sala do Instituto RenovaSer';
+
+  // Extract / clean pauta
+  let pauta = '';
+  const pautaMatch = desc.match(/pauta:\s*([^\n\r]+)/i);
+  if (pautaMatch && pautaMatch[1]) {
+    pauta = pautaMatch[1].trim();
+  }
+
+  if (!pauta) {
+    // Clean description from legacy boilerplate phrases
+    const cleaned = desc
+      .replace(/Modalidade:\s*[^\n\r]+/gi, '')
+      .replace(/Profissional Responsável:\s*[^\n\r]+/gi, '')
+      .replace(/Local:\s*[^\n\r]+/gi, '')
+      .replace(/Instituto RenovaSer • Agenda Interna Oficial/gi, '')
+      .replace(/Agendamento confirmado via Agenda Interna do Instituto RenovaSer\.?/gi, '')
+      .replace(/Participantes:\s*[^\n\r]+/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    if (cleaned && cleaned.length > 3) {
+      pauta = cleaned;
+    }
+  }
+
+  // Meaningful fallback if empty
+  if (!pauta) {
+    if (
+      ev.category === 'reuniao' ||
+      title.toLowerCase().includes('reunião') ||
+      title.toLowerCase().includes('reuniao')
+    ) {
+      const cleanTitle = title.replace(/^\[Reunião\]\s*/i, '').trim();
+      pauta = `Discussão de pautas e planejamento da equipe (${cleanTitle})`;
+    } else if (ev.category === 'atendimento' || title.toLowerCase().includes('atendimento')) {
+      pauta = 'Atendimento clínico com hora marcada';
+    } else if (ev.category === 'comunicacao') {
+      pauta = 'Comunicação oficial da equipe';
+    } else {
+      pauta = title.replace(/^\[(Evento|Atendimento|Reunião|Comunicação)\]\s*/i, '').trim();
+    }
+  }
+
+  return {
+    pauta,
+    format,
+    formatLabel,
+    locationLabel,
+    isOnline,
+    cleanDescription: pauta,
+  };
+}

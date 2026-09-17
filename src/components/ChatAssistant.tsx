@@ -22,8 +22,11 @@ import {
   Tag,
   Trash2,
   ChevronDown,
+  ChevronUp,
   UserCheck,
   Zap,
+  MapPin,
+  FileText,
 } from 'lucide-react';
 import type { ChatMessage, PendingAction, AppUser } from '../types';
 import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
@@ -66,9 +69,23 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const [therapists, setTherapists] = useState<AppUserWithAuth[]>([]);
   const [selectedTherapistEmails, setSelectedTherapistEmails] = useState<string[]>([]);
   const [isAllTherapistsSelected, setIsAllTherapistsSelected] = useState<boolean>(true);
-  const [showParticipantSelector, setShowParticipantSelector] = useState<boolean>(false);
+  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
+  const [meetingFormat, setMeetingFormat] = useState<'presencial' | 'online'>('presencial');
+  const [meetingPauta, setMeetingPauta] = useState<string>('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Load therapists list
   useEffect(() => {
@@ -111,7 +128,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
     }
   };
 
-  const handleInsertMeetingPrompt = (timeStr: string = 'Hoje às 19h30') => {
+  const handleInsertMeetingPrompt = (timeStr?: string) => {
     let participantDesc = '';
     if (
       isAllTherapistsSelected ||
@@ -129,9 +146,33 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           : 'equipe de terapeutas';
     }
 
-    const prompt = `Gostaria de agendar uma Reunião com tempo definido conforme a necessidade. ${timeStr}, com ${participantDesc}.`;
+    const formatDesc =
+      meetingFormat === 'online'
+        ? 'Formato: Online (com Google Meet)'
+        : 'Formato: Presencial (na Sala do Instituto RenovaSer)';
+
+    const pautaDesc = meetingPauta.trim()
+      ? `Pauta: ${meetingPauta.trim()}`
+      : 'Pauta: Discussão de casos clínicos e planejamento';
+
+    const timePart = timeStr ? `${timeStr}, ` : '';
+    const prompt = `Gostaria de agendar uma Reunião com tempo flexível/definido conforme a necessidade. ${pautaDesc}. ${formatDesc}. ${timePart}com ${participantDesc}.`;
     setInputText(prompt);
     textareaRef.current?.focus();
+  };
+
+  const getSelectedSummary = () => {
+    if (isAllTherapistsSelected || (therapists.length > 0 && selectedTherapistEmails.length === therapists.length)) {
+      return `👥 Toda a Equipe de Terapeutas (${therapists.length})`;
+    }
+    if (selectedTherapistEmails.length === 1) {
+      const found = therapists.find((t) => t.email.toLowerCase() === selectedTherapistEmails[0]);
+      return found ? `👤 ${found.name} (${found.specialty || 'Terapeuta'})` : '1 terapeuta selecionado';
+    }
+    if (selectedTherapistEmails.length > 1) {
+      return `👥 ${selectedTherapistEmails.length} terapeutas selecionados`;
+    }
+    return 'Selecione os participantes...';
   };
 
   // Sync prefilledInput if provided
@@ -183,8 +224,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
   const handleQuickSchedulePrompt = (category: string) => {
     if (category === 'reuniao') {
-      setShowParticipantSelector(true);
-      handleInsertMeetingPrompt('Hoje às 19h30');
+      setDropdownOpen(true);
+      handleInsertMeetingPrompt();
       return;
     }
     let prompt = '';
@@ -665,104 +706,224 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           </button>
         </div>
 
-        {/* Meeting Participant Selector Toolbar */}
-        <div className="mb-2.5 p-2 bg-emerald-50/70 border border-emerald-200/80 rounded-xl text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
-            <div className="flex items-center space-x-1.5 text-emerald-950 font-bold">
+        {/* Meeting Participant & Format Selector Toolbar */}
+        <div
+          ref={dropdownRef}
+          className="mb-2.5 p-2.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl text-xs relative space-y-2"
+        >
+          {/* Linha 1: Convocação de Participantes e Inserir no Chat */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-1.5 text-emerald-950 font-bold shrink-0">
               <Users className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-              <span>Participantes da Reunião:</span>
+              <span>Convocação de Reunião:</span>
             </div>
 
-            <div className="flex items-center space-x-1">
+            {/* Menu Suspenso (Dropdown que abre a relação ao clicar na setinha) */}
+            <div className="relative flex-1 min-w-[200px]">
               <button
                 type="button"
-                onClick={handleToggleAllTherapists}
-                className={`px-2 py-0.5 rounded-md font-bold text-[11px] transition-colors border cursor-pointer ${
-                  isAllTherapistsSelected
-                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-                title="Convidar toda a equipe de terapeutas"
+                id="btn-dropdown-participantes"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="w-full flex items-center justify-between px-3 py-1.5 bg-white hover:bg-slate-50 border border-emerald-300 hover:border-emerald-500 rounded-lg shadow-2xs text-left text-xs font-semibold text-slate-800 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                title="Clique na setinha para abrir a relação de participantes da reunião"
               >
-                👥 Todos os Terapeutas ({therapists.length})
+                <div className="flex items-center space-x-2 truncate">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                  <span className="truncate">{getSelectedSummary()}</span>
+                </div>
+                <div className="flex items-center space-x-1 shrink-0 ml-2 text-emerald-700">
+                  <span className="text-[10px] text-slate-400 font-normal hidden md:inline">selecionar</span>
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform duration-200 ${
+                      dropdownOpen ? 'rotate-180 text-emerald-800' : ''
+                    }`}
+                  />
+                </div>
+              </button>
+
+              {/* Relação Suspensa Aberta */}
+              {dropdownOpen && (
+                <div
+                  id="menu-relacao-participantes"
+                  className="absolute bottom-full mb-1.5 left-0 w-full sm:w-[380px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2.5 text-slate-800 animate-in fade-in zoom-in-95 duration-150"
+                >
+                  <div className="px-1.5 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-1 mb-1.5 flex items-center justify-between">
+                    <span>Relação de Participantes</span>
+                    <span className="text-emerald-700 font-normal">
+                      {isAllTherapistsSelected
+                        ? `${therapists.length} de ${therapists.length} convocados`
+                        : `${selectedTherapistEmails.length} de ${therapists.length} convocado(s)`}
+                    </span>
+                  </div>
+
+                  {/* Opção 1: Toda a Equipe de Terapeutas */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleToggleAllTherapists();
+                    }}
+                    className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors cursor-pointer mb-1 ${
+                      isAllTherapistsSelected
+                        ? 'bg-emerald-50 text-emerald-950 font-bold border border-emerald-300 shadow-2xs'
+                        : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <span
+                        className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-bold ${
+                          isAllTherapistsSelected
+                            ? 'bg-emerald-700 text-white'
+                            : 'border border-slate-300'
+                        }`}
+                      >
+                        {isAllTherapistsSelected ? '✓' : ''}
+                      </span>
+                      <div>
+                        <div className="text-xs">👥 Toda a Equipe de Terapeutas</div>
+                        <div className="text-[10px] text-slate-500 font-normal">
+                          Convocar todos os terapeutas e administração
+                        </div>
+                      </div>
+                    </div>
+                    {isAllTherapistsSelected && (
+                      <Check className="w-4 h-4 text-emerald-700 shrink-0" />
+                    )}
+                  </button>
+
+                  <div className="px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Ou selecione individualmente:
+                  </div>
+
+                  {/* Lista individual de Terapeutas */}
+                  <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
+                    {therapists.map((t) => {
+                      const isSelected =
+                        isAllTherapistsSelected ||
+                        selectedTherapistEmails.includes(t.email.toLowerCase());
+                      return (
+                        <button
+                          key={t.id || t.email}
+                          type="button"
+                          onClick={() => handleToggleSingleTherapist(t.email.toLowerCase())}
+                          className={`w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-50/80 text-emerald-950 font-semibold border border-emerald-200'
+                              : 'hover:bg-slate-50 text-slate-600 border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span
+                              className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-bold ${
+                                isSelected
+                                  ? 'bg-emerald-700 text-white'
+                                  : 'border border-slate-300'
+                              }`}
+                            >
+                              {isSelected ? '✓' : ''}
+                            </span>
+                            <div className="truncate">
+                              <div className="text-xs truncate">{t.name}</div>
+                              <div className="text-[10px] text-slate-400 font-normal truncate">
+                                {t.specialty || 'Terapeuta'} • {t.email}
+                              </div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0 ml-1" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Rodapé da relação suspensa */}
+                  <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500">
+                      Clique para marcar/desmarcar
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDropdownOpen(false)}
+                      className="px-3 py-1 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ações ao lado do menu suspenso */}
+            <div className="flex items-center space-x-1.5 shrink-0">
+              <button
+                type="button"
+                id="btn-inserir-chat-reuniao"
+                onClick={() => handleInsertMeetingPrompt()}
+                className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition-colors flex items-center space-x-1.5 cursor-pointer shadow-2xs"
+                title="Inserir texto da reunião no campo de digitação com participantes, formato e pauta"
+              >
+                <CalendarPlus className="w-3.5 h-3.5" />
+                <span>Inserir no Chat</span>
               </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {therapists.map((t) => {
-              const isSelected =
-                isAllTherapistsSelected ||
-                selectedTherapistEmails.includes(t.email.toLowerCase());
-              return (
+          {/* Linha 2: Confirmação de Formato (Presencial vs Online) e Campo de Pauta da Reunião */}
+          <div className="pt-2 border-t border-emerald-200/70 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {/* Seletor de Formato Obrigatório */}
+            <div className="flex items-center space-x-1.5 shrink-0">
+              <span className="text-[11px] font-bold text-emerald-950">Formato:</span>
+              <div className="inline-flex rounded-lg p-0.5 bg-white border border-emerald-300 shadow-2xs">
                 <button
-                  key={t.id || t.email}
                   type="button"
-                  onClick={() => handleToggleSingleTherapist(t.email.toLowerCase())}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center space-x-1.5 cursor-pointer ${
-                    isSelected
-                      ? 'bg-white text-emerald-950 border-emerald-400 ring-1 ring-emerald-500/20 shadow-2xs'
-                      : 'bg-slate-100/80 text-slate-500 border-slate-200 hover:bg-slate-200/60'
+                  id="btn-formato-presencial"
+                  onClick={() => setMeetingFormat('presencial')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center space-x-1 transition-all cursor-pointer ${
+                    meetingFormat === 'presencial'
+                      ? 'bg-emerald-700 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-emerald-800 hover:bg-emerald-50'
                   }`}
-                  title={`${t.name} (${t.specialty || 'Terapeuta'}) - Clique para marcar ou desmarcar`}
+                  title="Reunião Presencial na Sala do Instituto RenovaSer"
                 >
-                  <span
-                    className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                      isSelected
-                        ? 'bg-emerald-700 text-white'
-                        : 'bg-slate-300 text-slate-600'
-                    }`}
-                  >
-                    {isSelected ? '✓' : t.name.slice(0, 1)}
-                  </span>
-                  <span>{t.name}</span>
-                  <span className="text-[10px] opacity-75 font-normal">
-                    ({t.specialty || 'Terapeuta'})
-                  </span>
+                  <MapPin className="w-3 h-3" />
+                  <span>Presencial</span>
                 </button>
-              );
-            })}
+                <button
+                  type="button"
+                  id="btn-formato-online"
+                  onClick={() => setMeetingFormat('online')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center space-x-1 transition-all cursor-pointer ${
+                    meetingFormat === 'online'
+                      ? 'bg-sky-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-sky-800 hover:bg-sky-50'
+                  }`}
+                  title="Reunião Online com link automático do Google Meet"
+                >
+                  <Video className="w-3 h-3" />
+                  <span>Online (Meet)</span>
+                </button>
+              </div>
+            </div>
 
-            <div className="ml-auto flex items-center space-x-1.5">
-              <button
-                type="button"
-                onClick={() => handleInsertMeetingPrompt('Hoje às 19h30')}
-                className="px-2 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs transition-colors flex items-center space-x-1 cursor-pointer"
-                title="Inserir texto da reunião no campo de digitação"
-              >
-                <Clock className="w-3 h-3 text-slate-500" />
-                <span>Preencher 19h30</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  let participantDesc = '';
-                  if (
-                    isAllTherapistsSelected ||
-                    selectedTherapistEmails.length === 0 ||
-                    selectedTherapistEmails.length === therapists.length
-                  ) {
-                    participantDesc = 'equipe de terapeutas';
-                  } else {
-                    const selectedObjs = therapists.filter((t) =>
-                      selectedTherapistEmails.includes(t.email.toLowerCase())
-                    );
-                    participantDesc =
-                      selectedObjs.length > 0
-                        ? selectedObjs.map((t) => t.name).join(' e ')
-                        : 'equipe de terapeutas';
-                  }
-                  const prompt = `Gostaria de agendar uma Reunião com tempo definido conforme a necessidade. Hoje às 19h30, com ${participantDesc}.`;
-                  onSendMessage(prompt);
-                }}
-                disabled={isLoading}
-                className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xs transition-colors flex items-center space-x-1 shadow-2xs cursor-pointer"
-                title="Agendar imediatamente hoje às 19h30 com os participantes selecionados sem esperar"
-              >
-                <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
-                <span>⚡ Agendar Reunião 19h30</span>
-              </button>
+            {/* Campo da Pauta da Reunião */}
+            <div className="relative flex-1">
+              <div className="relative flex items-center">
+                <FileText className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  id="input-pauta-reuniao"
+                  value={meetingPauta}
+                  onChange={(e) => setMeetingPauta(e.target.value)}
+                  placeholder="Pauta da reunião (ex: Discussão de casos, Planejamento da equipe)..."
+                  className="w-full pl-8 pr-3 py-1 bg-white border border-emerald-300 focus:border-emerald-600 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleInsertMeetingPrompt();
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>

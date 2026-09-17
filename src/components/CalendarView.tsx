@@ -20,6 +20,8 @@ import {
   UserCheck,
   Check,
   MessageSquare,
+  MapPin,
+  FileText,
 } from 'lucide-react';
 import type { CalendarEvent, TimeSlot, ScheduleCategory, AppUser } from '../types';
 import {
@@ -29,7 +31,7 @@ import {
   getMonthYearBR,
   SAO_PAULO_TZ,
 } from '../lib/dateUtils';
-import { classifyCalendarEvent } from '../lib/scheduleTaxonomy';
+import { classifyCalendarEvent, parseEventDetails } from '../lib/scheduleTaxonomy';
 import { ProfessionalsMenu } from './ProfessionalsMenu';
 
 interface CalendarViewProps {
@@ -907,25 +909,41 @@ const EventCard: React.FC<EventCardProps> = ({
 }) => {
   const hasMeet = !!ev.meetLink;
   const classified = classifyCalendarEvent(ev);
+  const details = parseEventDetails(ev);
 
   return (
     <div className="group p-4 sm:p-4.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md bg-white transition-all flex flex-col justify-between">
       <div>
-        {/* Classification Badges */}
+        {/* Classification and Format Badges */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5">
-          <span
-            className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${classified.badgeClass}`}
-          >
-            {classified.eventSubtype === 'workshop' && <Wrench className="w-3 h-3 text-purple-700" />}
-            {classified.eventSubtype === 'treinamento' && <BookOpen className="w-3 h-3 text-purple-700" />}
-            {classified.eventSubtype === 'formacao' && (
-              <GraduationCap className="w-3 h-3 text-purple-700" />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${classified.badgeClass}`}
+            >
+              {classified.eventSubtype === 'workshop' && <Wrench className="w-3 h-3 text-purple-700" />}
+              {classified.eventSubtype === 'treinamento' && <BookOpen className="w-3 h-3 text-purple-700" />}
+              {classified.eventSubtype === 'formacao' && (
+                <GraduationCap className="w-3 h-3 text-purple-700" />
+              )}
+              {classified.eventSubtype === 'transmissao_online' && (
+                <Radio className="w-3 h-3 text-sky-700" />
+              )}
+              <span>{classified.label}</span>
+            </span>
+
+            {/* Format Badge: Presencial vs Online */}
+            {details.isOnline ? (
+              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
+                <Video className="w-3 h-3 text-sky-600" />
+                <span>Online (Meet)</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <MapPin className="w-3 h-3 text-emerald-700" />
+                <span>Presencial</span>
+              </span>
             )}
-            {classified.eventSubtype === 'transmissao_online' && (
-              <Radio className="w-3 h-3 text-sky-700" />
-            )}
-            <span>{classified.label}</span>
-          </span>
+          </div>
 
           <span className="text-[11px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 font-mono font-medium">
             {classified.durationLabel}
@@ -941,24 +959,81 @@ const EventCard: React.FC<EventCardProps> = ({
         </div>
 
         {/* Time and Location */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2.5 text-xs text-slate-700">
-          <div className="flex items-center space-x-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-100">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-slate-700">
+          <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-100">
             <Clock className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
             <span className="font-bold text-slate-900">
               {formatTimeBR(ev.start)} – {formatTimeBR(ev.end)}
             </span>
           </div>
 
-          {ev.location && (
-            <span className="text-slate-500 text-xs truncate">• {ev.location}</span>
-          )}
+          <div className="flex items-center space-x-1 text-slate-600 text-xs">
+            {details.isOnline ? (
+              <>
+                <Video className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span className="font-medium text-sky-800">Google Meet</span>
+              </>
+            ) : (
+              <>
+                <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span className="truncate">{details.locationLabel}</span>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Description Snippet if available */}
-        {ev.description && (
-          <p className="text-xs text-slate-600 mt-2.5 line-clamp-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed">
-            {ev.description}
-          </p>
+        {/* Bloco Estruturado de Pauta da Reunião e Local */}
+        {classified.category === 'reuniao' ? (
+          <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/90 text-xs">
+            <div className="flex items-center space-x-1.5 font-bold text-amber-950 mb-1">
+              <FileText className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>Pauta da Reunião:</span>
+            </div>
+            <p className="text-amber-950 leading-relaxed font-medium pl-5 text-[12px]">
+              {details.pauta}
+            </p>
+            <div className="mt-2 pt-1.5 border-t border-amber-200/70 flex items-center justify-between text-[11px] text-amber-900">
+              <span className="flex items-center space-x-1 font-semibold">
+                {details.isOnline ? (
+                  <>
+                    <Video className="w-3 h-3 text-sky-700" />
+                    <span>Reunião Online (Google Meet)</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="w-3 h-3 text-emerald-700" />
+                    <span>Reunião Presencial (Sala do Instituto)</span>
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
+            <div className="flex items-center justify-between font-semibold text-slate-800 mb-1">
+              <span className="flex items-center space-x-1.5">
+                {classified.category === 'atendimento' && (
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                )}
+                {classified.category === 'evento' && (
+                  <Sparkles className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                )}
+                {classified.category === 'comunicacao' && (
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                )}
+                <span className="font-bold text-slate-900">
+                  {classified.category === 'atendimento'
+                    ? 'Finalidade do Atendimento:'
+                    : classified.category === 'evento'
+                    ? 'Programação do Evento:'
+                    : 'Aviso da Comunicação:'}
+                </span>
+              </span>
+            </div>
+            <p className="text-slate-700 leading-relaxed pl-5">
+              {details.pauta}
+            </p>
+          </div>
         )}
 
         {/* Attendees / Professional */}
