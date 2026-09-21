@@ -32,7 +32,7 @@ export const MeetingHistoryModal: React.FC<MeetingHistoryModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-[#2E3029]">Histórico de Ações da Agenda</h3>
-              <p className="text-xs text-[#76766D]">Registros persistidos com segurança no Firestore</p>
+              <p className="text-xs text-[#76766D]">Registros persistidos com segurança em nuvem</p>
             </div>
           </div>
           <button
@@ -50,7 +50,7 @@ export const MeetingHistoryModal: React.FC<MeetingHistoryModalProps> = ({
           ) : logs.length === 0 ? (
             <div className="py-12 text-center text-[#76766D] text-xs">
               <ShieldCheck className="w-8 h-8 text-[#8C9484] mx-auto mb-2" />
-              <p className="font-medium text-[#2E3029]">Nenhuma ação registrada no Firestore ainda.</p>
+              <p className="font-medium text-[#2E3029]">Nenhuma ação registrada ainda.</p>
               <p className="text-[#76766D] mt-1">
                 Todas as reuniões criadas, editadas ou canceladas pelo assistente são auditadas aqui.
               </p>

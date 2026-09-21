@@ -32,7 +32,7 @@ export const DEFAULT_THERAPISTS: TherapistUser[] = [
   { id: 'admin1', name: 'Claudir Israel (Admin)', email: 'claudirisrael@gmail.com', role: 'admin' },
   { id: 'admin2', name: 'Maria Gorete (Admin)', email: 'mmgorete00@gmail.com', role: 'admin' },
   { id: 'admin3', name: 'Cleci Marchioro (Admin)', email: 'clecimarchioro@gmail.com', role: 'admin' },
-  { id: 'terapeuta1', name: 'Dr. Lucas (Terapeuta)', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta' }
+  { id: 'terapeuta1', name: 'Dr. Lucas (Terapeuta)', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta', technique: 'Psicoterapia' }
 ];
 
 export const DEFAULT_EVENTS: Evento[] = [

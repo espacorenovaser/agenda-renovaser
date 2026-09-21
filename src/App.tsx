@@ -78,7 +78,8 @@ export default function Dashboard() {
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
-    role: 'terapeuta' as 'admin' | 'terapeuta'
+    role: 'terapeuta' as 'admin' | 'terapeuta',
+    technique: ''
   });
 
   // --- ESTADO DO CHAT / ASSISTENTE ---
@@ -207,17 +208,17 @@ export default function Dashboard() {
         clientWhatsApp: ''
       });
 
-      showNotification('Compromisso gravado no Firebase Firestore com sucesso!');
+      showNotification('Compromisso gravado com sucesso!');
     } catch (err: any) {
-      showNotification('Erro ao salvar no Firestore: ' + (err.message || err), 'error');
+      showNotification('Erro ao salvar agendamento: ' + (err.message || err), 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // --- EXCLUIR EVENTO DO FIRESTORE ---
+  // --- EXCLUIR EVENTO ---
   const handleDeleteEvent = async (id: string, title: string) => {
-    if (!window.confirm(`Deseja realmente excluir "${title}" do Firebase?`)) {
+    if (!window.confirm(`Deseja realmente excluir "${title}"?`)) {
       return;
     }
 
@@ -232,7 +233,7 @@ export default function Dashboard() {
     }
   };
 
-  // --- LÓGICA DE CADASTRO DE UTILIZADOR NO FIRESTORE ---
+  // --- LÓGICA DE CADASTRO DE UTILIZADOR ---
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name.trim() || !newUser.email.trim()) return;
@@ -243,12 +244,13 @@ export default function Dashboard() {
         name: newUser.name.trim(),
         email: newUser.email.trim(),
         role: newUser.role,
+        technique: newUser.technique.trim() || undefined,
         createdAt: new Date().toISOString()
       });
 
       setShowNewUserModal(false);
-      setNewUser({ name: '', email: '', role: 'terapeuta' });
-      showNotification(`Profissional "${newUser.name}" cadastrado no Firestore!`);
+      setNewUser({ name: '', email: '', role: 'terapeuta', technique: '' });
+      showNotification(`Profissional "${newUser.name}" cadastrado com sucesso!`);
     } catch (err: any) {
       showNotification('Erro ao cadastrar profissional: ' + (err.message || err), 'error');
     } finally {
@@ -392,7 +394,7 @@ export default function Dashboard() {
 
   // Mapeamento de Terapeuta
   const therapistMap = therapists.reduce<Record<string, string>>((acc, t) => {
-    acc[t.id] = t.name;
+    acc[t.id] = t.technique ? `${t.name} (${t.technique})` : t.name;
     return acc;
   }, {});
 
@@ -469,7 +471,7 @@ export default function Dashboard() {
           <div className="bg-gradient-to-r from-emerald-800 to-teal-700 rounded-2xl p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <span className="text-xs uppercase font-bold tracking-wider text-emerald-200 flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5" /> Sincronização em Nuvem (Firestore)
+                <Database className="w-3.5 h-3.5" /> Sincronização em Nuvem
               </span>
               <h2 className="text-2xl font-bold mt-1">Transformação e Desenvolvimento Humano</h2>
               <p className="text-emerald-100 text-sm mt-1">
@@ -547,7 +549,7 @@ export default function Dashboard() {
                   <option value="todos">Todos os Profissionais / Admins ({therapists.length})</option>
                   {therapists.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.role === 'admin' ? 'Admin' : 'Terapeuta'})
+                      {t.name} {t.technique ? `(${t.technique})` : `(${t.role === 'admin' ? 'Admin' : 'Terapeuta'})`}
                     </option>
                   ))}
                 </select>
@@ -564,7 +566,7 @@ export default function Dashboard() {
             {isLoadingEvents ? (
               <div className="py-12 bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
                 <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-                <span>Carregando agenda do Firestore...</span>
+                <span>Carregando agenda...</span>
               </div>
             ) : (
               <>
@@ -794,7 +796,14 @@ export default function Dashboard() {
                 <div key={t.id} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="truncate pr-2">
                     <p className="font-semibold text-slate-800 truncate">{t.name}</p>
-                    <p className="text-[10px] text-slate-500 truncate">{t.email}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                      {t.technique && (
+                        <span className="text-[10px] text-emerald-800 bg-emerald-100/70 px-1.5 py-0.2 rounded font-medium border border-emerald-200">
+                          {t.technique}
+                        </span>
+                      )}
+                      <p className="text-[10px] text-slate-500 truncate">{t.email}</p>
+                    </div>
                   </div>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                     t.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
@@ -838,8 +847,8 @@ export default function Dashboard() {
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Criar Novo Agendamento (Firestore)</h3>
-                <p className="text-[11px] text-slate-500">Grave no banco e configure a notificação antecipada do cliente</p>
+                <h3 className="font-bold text-slate-900 text-sm">Criar Novo Agendamento</h3>
+                <p className="text-[11px] text-slate-500">Configure os dados do compromisso e a notificação do cliente</p>
               </div>
               <button onClick={() => setShowNewEventModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
@@ -882,7 +891,7 @@ export default function Dashboard() {
                   >
                     {therapists.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} ({t.role === 'admin' ? 'Admin' : 'Terapeuta'})
+                        {t.name} {t.technique ? `— ${t.technique}` : `(${t.role === 'admin' ? 'Admin' : 'Terapeuta'})`}
                       </option>
                     ))}
                   </select>
@@ -1001,7 +1010,7 @@ export default function Dashboard() {
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Salvar no Firestore
+                  Salvar Agendamento
                 </button>
               </div>
             </form>
@@ -1014,7 +1023,7 @@ export default function Dashboard() {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">Cadastrar Novo Utilizador (Firestore)</h3>
+              <h3 className="font-bold text-slate-900 text-sm">Cadastrar Novo Utilizador</h3>
               <button onClick={() => setShowNewUserModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
@@ -1044,6 +1053,18 @@ export default function Dashboard() {
                 />
               </div>
               <div>
+                <label className="font-medium text-slate-700 block mb-1">
+                  Técnica / Terapia <span className="text-slate-400 font-normal">(ex: Reiki, Tarô, Florais)</span>
+                </label>
+                <input 
+                  type="text" 
+                  value={newUser.technique}
+                  onChange={(e) => setNewUser({ ...newUser, technique: e.target.value })}
+                  placeholder="Ex: Reiki, Tarô, Florais, Constelação..." 
+                  className="w-full p-2 bg-slate-50 border rounded-lg focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div>
                 <label className="font-medium text-slate-700 block mb-1">Função</label>
                 <select 
                   value={newUser.role}
@@ -1069,7 +1090,7 @@ export default function Dashboard() {
                   className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg flex items-center gap-1.5"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Cadastrar no Firestore
+                  Cadastrar Utilizador
                 </button>
               </div>
             </form>

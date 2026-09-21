@@ -417,7 +417,7 @@ export const WeeklyAttendanceSummary: React.FC<WeeklyAttendanceSummaryProps> = (
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 pt-2 border-t border-slate-100">
         <div className="flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Os dados são atualizados automaticamente em tempo real com o banco Firestore.</span>
+          <span>Os dados são atualizados automaticamente em tempo real com o banco de dados.</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md">
