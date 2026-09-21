@@ -145,24 +145,24 @@ export function DayScheduleView({
                 }}
                 className="p-2.5 rounded-xl border border-slate-200 shadow-sm bg-white hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer space-y-1"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 truncate">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${evt.badgeColor}`}>
                       {evt.category.toUpperCase()}
                     </span>
-                    <h4 className="text-xs font-bold text-slate-900 truncate">
+                    <h4 className="text-xs font-bold text-slate-900 break-words leading-snug">
                       {evt.title}
                     </h4>
                   </div>
                   
                   {/* Badge de Horário Quebrado e Extensão */}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1 font-mono">
-                      <Clock className="w-3 h-3 text-emerald-600" />
+                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1 font-mono whitespace-nowrap">
+                      <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
                       {evt.time}
                     </span>
                     {extendsNextHour && (
-                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded hidden sm:inline-block">
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded whitespace-nowrap hidden sm:inline-block">
                         estende até {endHour}:00
                       </span>
                     )}
@@ -170,16 +170,16 @@ export function DayScheduleView({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-0.5">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="flex items-center gap-1 text-slate-700 font-medium">
-                      <User className="w-3 h-3 text-slate-400" />
+                      <User className="w-3 h-3 text-slate-400 shrink-0" />
                       {therapistMap[evt.therapistId] || 'Equipe'}
                     </span>
                     <span className="flex items-center gap-1 text-slate-600">
                       {evt.type === 'online' ? (
-                        <Video className="w-3 h-3 text-blue-500" />
+                        <Video className="w-3 h-3 text-blue-500 shrink-0" />
                       ) : (
-                        <MapPin className="w-3 h-3 text-emerald-500" />
+                        <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
                       )}
                       {evt.location}
                     </span>
@@ -189,8 +189,8 @@ export function DayScheduleView({
                   {(evt.clientWhatsApp || evt.clientEmail) && (
                     <div className="flex items-center gap-1.5 text-[10px] text-emerald-700 font-medium">
                       {evt.clientWhatsApp && (
-                        <span className="inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                          <MessageCircle className="w-2.5 h-2.5 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 whitespace-nowrap">
+                          <MessageCircle className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
                           {evt.clientWhatsApp}
                         </span>
                       )}
@@ -209,13 +209,13 @@ export function DayScheduleView({
                 e.stopPropagation();
                 onSelectEvent(evt);
               }}
-              className="p-1.5 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-[11px] flex items-center justify-between cursor-pointer transition-colors"
+              className="p-2 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-[11px] flex flex-wrap items-center justify-between gap-1.5 cursor-pointer transition-colors"
             >
-              <span className="text-slate-600 truncate flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                Continuação: <strong className="text-slate-800">{evt.title}</strong>
+              <span className="text-slate-700 flex items-center gap-1.5 break-words min-w-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                Continuação: <strong className="text-slate-900 font-semibold">{evt.title}</strong>
               </span>
-              <span className="text-[10px] font-mono text-slate-500 shrink-0">
+              <span className="text-[10px] font-mono text-slate-500 shrink-0 whitespace-nowrap">
                 (iniciou às {evt.time.split('-')[0]?.trim() || evt.time})
               </span>
             </div>
@@ -223,9 +223,9 @@ export function DayScheduleView({
 
           {/* Estado Vazio (Clique para agendar) */}
           {!hasEvents && (
-            <div className="h-full flex items-center justify-between text-slate-400 text-xs px-2 opacity-60 group-hover:opacity-100 transition-opacity">
+            <div className="h-full flex items-center justify-between text-slate-400 text-xs px-2 py-1 opacity-60 group-hover:opacity-100 transition-opacity">
               <span className="text-[11px]">Horário livre</span>
-              <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                 <Plus className="w-3 h-3" /> Agendar neste horário
               </span>
             </div>
@@ -287,11 +287,8 @@ export function DayScheduleView({
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col">
           <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
             <span className="text-xs font-bold tracking-wide uppercase flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
               Manhã (07h às 12h)
-            </span>
-            <span className="text-[11px] text-slate-300 font-mono">
-              {morningHours.length} faixas de horário
             </span>
           </div>
 
@@ -304,11 +301,8 @@ export function DayScheduleView({
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col">
           <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
             <span className="text-xs font-bold tracking-wide uppercase flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
               Tarde & Noite (13h às 21h)
-            </span>
-            <span className="text-[11px] text-slate-300 font-mono">
-              {afternoonHours.length} faixas de horário
             </span>
           </div>
 

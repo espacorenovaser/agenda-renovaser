@@ -20,7 +20,8 @@ import {
   Loader2,
   MessageCircle,
   Phone,
-  Bell
+  Bell,
+  BarChart3
 } from 'lucide-react';
 import type { Evento, TherapistUser } from './types';
 import { 
@@ -37,6 +38,7 @@ import { DayScheduleView } from './components/DayScheduleView';
 import { WeekScheduleView } from './components/WeekScheduleView';
 import { MonthScheduleView } from './components/MonthScheduleView';
 import { EventDetailsModal } from './components/EventDetailsModal';
+import { WeeklyAttendanceSummary } from './components/WeeklyAttendanceSummary';
 
 export default function Dashboard() {
   // --- ESTADOS DO FIRESTORE ---
@@ -152,6 +154,14 @@ export default function Dashboard() {
       time: targetTime
     }));
     setShowNewEventModal(true);
+  };
+
+  // Rolar suavemente até a seção de Resumo de Atendimentos
+  const scrollToSummary = () => {
+    const el = document.getElementById('resumo-atendimentos');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   // --- LÓGICA DE CRIAÇÃO DE EVENTO NO FIRESTORE ---
@@ -421,20 +431,29 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={scrollToSummary}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200 shadow-2xs"
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-600" />
+              <span className="hidden sm:inline">Resumo de Atendimentos</span>
+              <span className="sm:hidden">Resumo</span>
+            </button>
             <button 
               onClick={() => setShowNewUserModal(true)}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
             >
               <UserPlus className="w-4 h-4 text-slate-600" />
-              Cadastrar Utilizador
+              <span className="hidden sm:inline">Cadastrar Utilizador</span>
+              <span className="sm:hidden">Utilizador</span>
             </button>
             <button 
               onClick={() => openNewEventAt()}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all"
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all"
             >
               <Plus className="w-4 h-4" />
-              Novo Agendamento
+              <span>Novo Agendamento</span>
             </button>
           </div>
         </div>
@@ -447,7 +466,7 @@ export default function Dashboard() {
         <section className="lg:col-span-2 space-y-6">
           
           {/* Banner */}
-          <div className="bg-gradient-to-r from-emerald-800 to-teal-700 rounded-2xl p-6 text-white shadow-md flex items-center justify-between">
+          <div className="bg-gradient-to-r from-emerald-800 to-teal-700 rounded-2xl p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <span className="text-xs uppercase font-bold tracking-wider text-emerald-200 flex items-center gap-1.5">
                 <Database className="w-3.5 h-3.5" /> Sincronização em Nuvem (Firestore)
@@ -457,6 +476,13 @@ export default function Dashboard() {
                 Acompanhe e gerencie os atendimentos, reuniões e eventos com facilidade e precisão.
               </p>
             </div>
+            <button
+              onClick={scrollToSummary}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-xs font-semibold text-white transition-all backdrop-blur-xs shrink-0 self-start sm:self-auto shadow-2xs"
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-300" />
+              Ver Resumo Semanal
+            </button>
           </div>
 
           {/* Barra de Filtros e Seleção de Período */}
@@ -782,6 +808,21 @@ export default function Dashboard() {
         </aside>
 
       </main>
+
+      {/* SEÇÃO: RESUMO DE ATENDIMENTOS DA SEMANA (GRÁFICO RECHARTS) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <WeeklyAttendanceSummary
+          events={events}
+          therapists={therapists}
+          onSelectCategory={(cat) => {
+            setActiveCategory(cat);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onScrollToTop={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        />
+      </div>
 
       {/* MODAL DE INFORMAÇÕES COMPLETAS DO AGENDAMENTO */}
       <EventDetailsModal
