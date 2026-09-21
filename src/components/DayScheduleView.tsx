@@ -155,17 +155,12 @@ export function DayScheduleView({
                     </h4>
                   </div>
                   
-                  {/* Badge de Horário Quebrado e Extensão */}
+                  {/* Badge de Horário */}
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1 font-mono whitespace-nowrap">
                       <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
                       {evt.time}
                     </span>
-                    {extendsNextHour && (
-                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded whitespace-nowrap hidden sm:inline-block">
-                        estende até {endHour}:00
-                      </span>
-                    )}
                   </div>
                 </div>
 
