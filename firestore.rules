@@ -10,23 +10,22 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Perfil do Usuário
+    // Perfil e Usuários/Profissionais da Equipe
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if true;
 
       match /chat_messages/{messageId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if true;
       }
 
       match /meeting_logs/{logId} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if true;
       }
     }
 
     // Coleção Compartilhada de Agendamentos e Reuniões
     match /events/{eventId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

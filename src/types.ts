@@ -1,5 +1,28 @@
 export type ScheduleCategory = 'atendimento' | 'reuniao' | 'evento' | 'comunicacao';
 
+export interface Evento {
+  id: string;
+  title: string;
+  category: 'atendimento' | 'reuniao' | 'evento';
+  time: string;
+  date: string; // YYYY-MM-DD
+  location: string;
+  type: 'presencial' | 'online';
+  therapistId: string;
+  clientEmail?: string;
+  clientWhatsApp?: string;
+  badgeColor: string;
+  createdAt?: string;
+}
+
+export interface TherapistUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'terapeuta';
+  createdAt?: string;
+}
+
 export type EventSubtype = 'workshop' | 'treinamento' | 'formacao' | 'transmissao_online';
 
 export interface AppUser {
