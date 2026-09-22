@@ -354,6 +354,18 @@ export default function Dashboard() {
     }
   };
 
+  // --- LIMPAR CHAT DO ASSISTENTE ---
+  const handleClearChat = () => {
+    setChatMessages([
+      {
+        sender: 'assistant',
+        text: 'Histórico da conversa limpo! Como posso ajudar na agenda do RenovaSer hoje? Você pode escrever o agendamento desejado (ex: "Agendar dia 26/09 às 14h na Sala 1") ou clicar em "Marcar horário".'
+      }
+    ]);
+    setChatInput('');
+    showNotification('Histórico da conversa limpo com sucesso.');
+  };
+
   // --- LÓGICA DO ASSISTENTE INTELIGENTE ---
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
@@ -369,8 +381,8 @@ export default function Dashboard() {
       lower === 'marcar horário' || 
       lower === 'marcar horario' || 
       lower === 'agendar' || 
-      lower === 'novo agendamento' ||
-      lower === 'agendar horário' ||
+      lower === 'novo agendamento' || 
+      lower === 'agendar horário' || 
       lower === 'agendar horario';
 
     if (isGenericBooking) {
@@ -393,7 +405,11 @@ export default function Dashboard() {
       lower.includes('marcar') || 
       lower.includes('reunião') || 
       lower.includes('reuniao') || 
-      lower.includes('atendimento');
+      lower.includes('atendimento') ||
+      lower.includes('sala') ||
+      lower.includes('sessão') ||
+      lower.includes('sessao') ||
+      lower.includes('terapia');
 
     if (isScheduling) {
       const isReuniao = lower.includes('reuni') || lower.includes('equipe');
@@ -401,15 +417,26 @@ export default function Dashboard() {
       const isTomorrow = lower.includes('amanhã') || lower.includes('amanha');
       
       let dateVal = todayStr;
-      if (isTomorrow) {
+
+      // Suporte para datas em formato DD/MM ou DD/MM/AAAA (ex: 26/09)
+      const dateSlashMatch = lower.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+      if (dateSlashMatch) {
+        const d = dateSlashMatch[1].padStart(2, '0');
+        const m = dateSlashMatch[2].padStart(2, '0');
+        const currentYear = new Date().getFullYear();
+        const y = dateSlashMatch[3] ? (dateSlashMatch[3].length === 2 ? `20${dateSlashMatch[3]}` : dateSlashMatch[3]) : currentYear.toString();
+        dateVal = `${y}-${m}-${d}`;
+      } else if (isTomorrow) {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         dateVal = tomorrow.toISOString().split('T')[0];
       }
 
-      let timeVal = '19:30 - 20:30';
+      let timeVal = '14:00 - 15:00';
+      let hasExplicitTime = false;
       const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})?/);
       if (timeMatch) {
+        hasExplicitTime = true;
         const h = timeMatch[1].padStart(2, '0');
         const m = timeMatch[2] || '00';
         const nextHour = (parseInt(h, 10) + 1).toString().padStart(2, '0');
@@ -423,6 +450,12 @@ export default function Dashboard() {
 
       if (lower.includes('com dr.') || lower.includes('com dra.')) {
         titleVal = `Atendimento Clínico`;
+      } else if (userMsg.includes('-')) {
+        const parts = userMsg.split('-');
+        const candidate = parts.find((p) => p.trim().length > 3 && !p.toLowerCase().includes('sala'));
+        if (candidate) {
+          titleVal = candidate.trim();
+        }
       }
 
       const categoryVal: 'reuniao' | 'atendimento' | 'evento' = isReuniao ? 'reuniao' : 'atendimento';
@@ -497,11 +530,11 @@ export default function Dashboard() {
           ...prev,
           {
             sender: 'assistant',
-            text: `Entendido! Estou pronto para auxiliar na agenda do Instituto RenovaSer. Você pode pedir para agendar reuniões, atendimentos clínicos ou clicar em "Marcar horário".`,
+            text: `Recebi sua mensagem! Como não identifiquei o dia ou horário exato na mensagem, você pode me informar os detalhes (ex: "Agendar dia 26/09 às 15h na Sala 2") ou clicar no botão abaixo para abrir o formulário já com a seleção das salas:`,
             action: 'open_modal'
           }
         ]);
-      }, 400);
+      }, 350);
     }
   };
 
@@ -919,19 +952,32 @@ export default function Dashboard() {
         {/* Lateral: Assistente Integrado e Equipe */}
         <aside className="space-y-6">
           {/* Assistente Integrado */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col h-[480px]">
-            <div className="flex items-center gap-2 pb-4 border-b border-slate-100">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-                <Sparkles className="w-4 h-4" />
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col h-[560px]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Assistente RenovaSer</h3>
+                  <p className="text-[11px] text-slate-500">Agendamento por Texto ou Voz</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xs font-bold text-slate-900">Assistente RenovaSer</h3>
-                <p className="text-[11px] text-slate-500">Agendamento por Voz ou Texto</p>
-              </div>
+
+              {/* Botão Limpar Chat */}
+              <button
+                type="button"
+                onClick={handleClearChat}
+                title="Limpar mensagens da conversa"
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-rose-200 transition-all cursor-pointer shadow-2xs"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                <span>Limpar chat</span>
+              </button>
             </div>
 
             {/* Mensagens do Chat */}
-            <div className="flex-1 my-4 space-y-3 overflow-y-auto text-xs pr-1">
+            <div className="flex-1 my-3 space-y-3 overflow-y-auto text-xs pr-1">
               {chatMessages.map((msg, index) => (
                 <div
                   key={index}
@@ -976,22 +1022,39 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Input de Envio */}
-            <div className="relative pt-1">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ex: Agendar atendimento amanhã às 14h..."
-                className="w-full pl-3 pr-10 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 focus:bg-white transition-all"
-              />
-              <button 
-                onClick={handleSendMessage}
-                className="absolute right-2 top-3 text-emerald-600 hover:text-emerald-700 p-1"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+            {/* Área de Escrita Ampliada */}
+            <div className="pt-2 border-t border-slate-100 space-y-1">
+              <div className="relative bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all shadow-2xs">
+                <textarea
+                  rows={3}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Escreva aqui sua solicitação (ex: Agendar para 26/09 - Sábado do Cuidado, atendimento na Sala 2 às 15h)..."
+                  className="w-full px-3.5 pt-2.5 pb-11 text-xs sm:text-[13px] bg-transparent resize-y min-h-[82px] max-h-[220px] focus:outline-none text-slate-800 placeholder:text-slate-400 leading-relaxed"
+                />
+
+                {/* Barra inferior com instrução e botão de envio */}
+                <div className="absolute left-3 right-2.5 bottom-2.5 flex items-center justify-between pointer-events-none">
+                  <span className="text-[10px] text-slate-400 hidden sm:inline-block">
+                    <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Enter</kbd> envia • <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Shift+Enter</kbd> pula linha
+                  </span>
+                  <button 
+                    type="button"
+                    onClick={handleSendMessage}
+                    disabled={!chatInput.trim()}
+                    className="pointer-events-auto ml-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer"
+                  >
+                    <span>Enviar</span>
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
