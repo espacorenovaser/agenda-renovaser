@@ -46,6 +46,7 @@ import {
   validateRoomBooking,
   RENOVASER_ROOMS 
 } from './lib/roomService';
+import { parseAssistantCommand } from './lib/assistantParser';
 import { getCurrentSessionUser, logoutSession } from './lib/authService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
@@ -391,7 +392,7 @@ export default function Dashboard() {
           ...prev,
           {
             sender: 'assistant',
-            text: 'Com certeza! Você pode clicar no botão abaixo para abrir o formulário completo de agendamento ou me dizer os detalhes como: "Agendar atendimento clínico amanhã às 14h com Dr. Lucas".',
+            text: 'Com certeza! Você pode clicar no botão abaixo para abrir o formulário completo de agendamento ou me dizer os detalhes como: "Agendar atendimento amanhã às 14h na Sala 1".',
             action: 'open_modal'
           }
         ]);
@@ -399,128 +400,71 @@ export default function Dashboard() {
       return;
     }
 
-    // Detecção de intenção com dados específicos
-    const isScheduling = 
-      lower.includes('agendar') || 
-      lower.includes('marcar') || 
-      lower.includes('reunião') || 
-      lower.includes('reuniao') || 
-      lower.includes('atendimento') ||
-      lower.includes('sala') ||
-      lower.includes('sessão') ||
-      lower.includes('sessao') ||
-      lower.includes('terapia');
+    // Processamento inteligente do comando com suporte a múltiplas salas e intervalos de horário
+    const parsed = parseAssistantCommand(userMsg, events, therapists);
 
-    if (isScheduling) {
-      const isReuniao = lower.includes('reuni') || lower.includes('equipe');
-      const isOnline = lower.includes('online') || lower.includes('meet') || lower.includes('zoom');
-      const isTomorrow = lower.includes('amanhã') || lower.includes('amanha');
-      
-      let dateVal = todayStr;
-
-      // Suporte para datas em formato DD/MM ou DD/MM/AAAA (ex: 26/09)
-      const dateSlashMatch = lower.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
-      if (dateSlashMatch) {
-        const d = dateSlashMatch[1].padStart(2, '0');
-        const m = dateSlashMatch[2].padStart(2, '0');
-        const currentYear = new Date().getFullYear();
-        const y = dateSlashMatch[3] ? (dateSlashMatch[3].length === 2 ? `20${dateSlashMatch[3]}` : dateSlashMatch[3]) : currentYear.toString();
-        dateVal = `${y}-${m}-${d}`;
-      } else if (isTomorrow) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        dateVal = tomorrow.toISOString().split('T')[0];
-      }
-
-      let timeVal = '14:00 - 15:00';
-      let hasExplicitTime = false;
-      const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})?/);
-      if (timeMatch) {
-        hasExplicitTime = true;
-        const h = timeMatch[1].padStart(2, '0');
-        const m = timeMatch[2] || '00';
-        const nextHour = (parseInt(h, 10) + 1).toString().padStart(2, '0');
-        timeVal = `${h}:${m} - ${nextHour}:${m}`;
-      }
-
-      // Extração inteligente do título
-      let titleVal = isReuniao
-        ? 'Reunião com a Equipe de Terapeutas'
-        : 'Atendimento Terapêutico';
-
-      if (lower.includes('com dr.') || lower.includes('com dra.')) {
-        titleVal = `Atendimento Clínico`;
-      } else if (userMsg.includes('-')) {
-        const parts = userMsg.split('-');
-        const candidate = parts.find((p) => p.trim().length > 3 && !p.toLowerCase().includes('sala'));
-        if (candidate) {
-          titleVal = candidate.trim();
-        }
-      }
-
-      const categoryVal: 'reuniao' | 'atendimento' | 'evento' = isReuniao ? 'reuniao' : 'atendimento';
-
-      // Alocação inteligente de espaço físico (Salas 1, 2, 3 ou Auditório modular)
-      let assignedRoomId: RoomId | undefined = undefined;
-      let assignedRoomName: string | undefined = undefined;
-
-      if (!isOnline) {
-        if (lower.includes('auditório') || lower.includes('auditorio') || lower.includes('salão') || lower.includes('salao') || lower.includes('evento')) {
-          assignedRoomId = 'auditorio';
-        } else if (lower.includes('sala 3') || lower.includes('vitalidade')) {
-          assignedRoomId = 'sala_3';
-        } else if (lower.includes('sala 2') || lower.includes('serenidade')) {
-          assignedRoomId = 'sala_2';
-        } else if (lower.includes('sala 1') || lower.includes('harmonia')) {
-          assignedRoomId = 'sala_1';
-        } else {
-          // Busca a primeira sala disponível sem conflitos físicos
-          const availability = checkRoomAvailability(dateVal, timeVal, events);
-          assignedRoomId = availability.firstAvailableRoomId || 'sala_1';
-        }
-        const roomObj = getRoomById(assignedRoomId);
-        assignedRoomName = roomObj ? roomObj.label : 'Sala 1 • Harmonia';
-      }
-
-      const locationVal = isOnline
-        ? 'Online - Google Meet'
-        : (assignedRoomName || 'Sala do Instituto RenovaSer');
-
-      const newEvt: Omit<Evento, 'id'> = {
-        title: titleVal,
-        category: categoryVal,
-        time: timeVal,
-        date: dateVal,
-        location: locationVal,
-        type: isOnline ? 'online' : 'presencial',
-        roomId: assignedRoomId,
-        roomName: assignedRoomName,
-        therapistId: therapists[0]?.id || 'admin1',
-        clientEmail: '',
-        clientWhatsApp: '',
-        badgeColor: isReuniao 
-          ? 'bg-blue-100 text-blue-800 border-blue-200' 
-          : 'bg-emerald-100 text-emerald-800 border-emerald-200',
-        createdAt: new Date().toISOString()
-      };
-
+    if (parsed.isBooking && parsed.items.length > 0) {
       try {
-        await saveEvent(newEvt);
-        const roomInfo = assignedRoomName ? ` (${assignedRoomName})` : '';
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: `Perfeito! Agendei e reservei no Firebase: "${titleVal}" para ${dateVal} às ${timeVal} no espaço ${roomInfo || (isOnline ? 'Online' : 'Presencial')}. O espaço físico já foi reservado!`
-          }
-        ]);
-        showNotification('Compromisso agendado pela IA e sala reservada!');
+        const savedTitles: string[] = [];
+
+        for (const item of parsed.items) {
+          const newEvt: Omit<Evento, 'id'> = {
+            title: item.title,
+            category: item.category,
+            time: item.time,
+            date: item.date,
+            location: item.location,
+            type: item.type,
+            roomId: item.roomId,
+            roomName: item.roomName,
+            therapistId: item.therapistId,
+            clientEmail: '',
+            clientWhatsApp: '',
+            badgeColor: item.category === 'reuniao'
+              ? 'bg-blue-100 text-blue-800 border-blue-200'
+              : item.category === 'evento'
+              ? 'bg-purple-100 text-purple-800 border-purple-200'
+              : 'bg-emerald-100 text-emerald-800 border-emerald-200',
+            createdAt: new Date().toISOString()
+          };
+
+          await saveEvent(newEvt);
+          savedTitles.push(`${item.roomName || item.location}: ${item.title}`);
+        }
+
+        const firstItem = parsed.items[0];
+        const [year, month, day] = firstItem.date.split('-');
+        const formattedDate = day && month && year ? `${day}/${month}/${year}` : firstItem.date;
+
+        if (parsed.items.length > 1) {
+          const summaryList = parsed.items
+            .map((it) => `• ${it.roomName || it.location}: "${it.title}"`)
+            .join('\n');
+
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: 'assistant',
+              text: `Perfeito! Agendei e reservei com sucesso na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!`
+            }
+          ]);
+          showNotification(`${parsed.items.length} agendamentos registrados na agenda com sucesso!`);
+        } else {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: 'assistant',
+              text: `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!`
+            }
+          ]);
+          showNotification('Compromisso registrado na agenda e sala reservada!');
+        }
       } catch (err: any) {
         setChatMessages((prev) => [
           ...prev,
           {
             sender: 'assistant',
-            text: `Ocorreu uma falha ao persistir no Firebase: ${err.message || err}. Verifique a conexão.`
+            text: `Ocorreu uma falha ao salvar na agenda: ${err.message || err}. Por favor, tente novamente.`
           }
         ]);
       }
@@ -1013,6 +957,14 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => {
+                  setChatInput('Agendar para dia 26/09/2026 - Sábado do Cuidado, das 10h às 16h. Sala 1: Constelação e Quiropraxia. Sala 2: Reiki e Quick Massagem. Sala 3: Barra de Access e Tarot.');
+                }}
+                className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-full border border-purple-200 font-semibold whitespace-nowrap transition-colors"
+              >
+                Sábado do Cuidado (3 Salas)
+              </button>
+              <button
+                onClick={() => {
                   setChatInput('Agendar reunião com a equipe de terapeutas hoje às 19h30');
                   setTimeout(() => handleSendMessage(), 50);
                 }}
@@ -1022,9 +974,9 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Área de Escrita Ampliada */}
-            <div className="pt-2 border-t border-slate-100 space-y-1">
-              <div className="relative bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all shadow-2xs">
+            {/* Área de Escrita Ampliada e Sem Sobreposição */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all shadow-2xs flex flex-col">
                 <textarea
                   rows={3}
                   value={chatInput}
@@ -1036,19 +988,19 @@ export default function Dashboard() {
                     }
                   }}
                   placeholder="Escreva aqui sua solicitação (ex: Agendar para 26/09 - Sábado do Cuidado, atendimento na Sala 2 às 15h)..."
-                  className="w-full px-3.5 pt-2.5 pb-11 text-xs sm:text-[13px] bg-transparent resize-y min-h-[82px] max-h-[220px] focus:outline-none text-slate-800 placeholder:text-slate-400 leading-relaxed"
+                  className="w-full px-3.5 pt-3 pb-2 text-xs sm:text-[13px] bg-transparent resize-y min-h-[76px] max-h-[180px] focus:outline-none text-slate-800 placeholder:text-slate-400 leading-relaxed block"
                 />
 
-                {/* Barra inferior com instrução e botão de envio */}
-                <div className="absolute left-3 right-2.5 bottom-2.5 flex items-center justify-between pointer-events-none">
-                  <span className="text-[10px] text-slate-400 hidden sm:inline-block">
+                {/* Barra de Ações Fixada Abaixo do Campo de Texto (Nunca Cobre o Texto) */}
+                <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between gap-2 bg-slate-50/70 rounded-b-xl">
+                  <span className="text-[10px] text-slate-400 select-none">
                     <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Enter</kbd> envia • <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Shift+Enter</kbd> pula linha
                   </span>
                   <button 
                     type="button"
                     onClick={handleSendMessage}
                     disabled={!chatInput.trim()}
-                    className="pointer-events-auto ml-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer shrink-0"
                   >
                     <span>Enviar</span>
                     <Send className="w-3.5 h-3.5" />
