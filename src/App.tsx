@@ -27,7 +27,9 @@ import {
   Shield,
   UserCheck,
   DoorOpen,
-  Layers
+  Layers,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import type { Evento, TherapistUser, RoomId } from './types';
 import { 
@@ -40,6 +42,18 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/firestoreService';
+import { 
+  initAuth, 
+  googleSignIn, 
+  getAccessToken, 
+  logout as googleLogout 
+} from './lib/firebase';
+import type { User } from 'firebase/auth';
+import { 
+  createGoogleCalendarEvent, 
+  deleteGoogleCalendarEvent, 
+  fetchGoogleCalendarEvents 
+} from './lib/googleCalendarService';
 import { 
   getRoomById, 
   checkRoomAvailability, 
@@ -123,6 +137,85 @@ export default function Dashboard() {
     setTimeout(() => {
       setNotification(null);
     }, 4000);
+  };
+
+  // --- ESTADO DO GOOGLE AGENDA (GOOGLE CALENDAR) ---
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
+
+  useEffect(() => {
+    const unsubGoogleAuth = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => {
+      unsubGoogleAuth();
+    };
+  }, []);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+        showNotification(`Google Agenda conectada com sucesso (${res.user.email})!`);
+        // Sincronizar eventos imediatamente
+        await handleSyncGoogleCalendar(res.accessToken);
+      }
+    } catch (err: any) {
+      console.error('Erro ao conectar Google Agenda:', err);
+      showNotification(`Falha ao conectar Google Agenda: ${err?.message || err}`, 'error');
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    try {
+      await googleLogout();
+      setGoogleUser(null);
+      setGoogleToken(null);
+      showNotification('Google Agenda desconectada.');
+    } catch (err: any) {
+      console.error('Erro ao desconectar Google Agenda:', err);
+    }
+  };
+
+  const handleSyncGoogleCalendar = async (tokenOverride?: string) => {
+    const token = tokenOverride || googleToken || await getAccessToken();
+    if (!token) {
+      showNotification('Conecte sua conta do Google Agenda no topo da página para sincronizar.', 'error');
+      return;
+    }
+    setIsSyncingGoogle(true);
+    try {
+      const gcalEvents = await fetchGoogleCalendarEvents(token);
+      if (gcalEvents && gcalEvents.length > 0) {
+        let syncedCount = 0;
+        for (const gEvt of gcalEvents) {
+          await saveEvent(gEvt);
+          syncedCount++;
+        }
+        showNotification(`${syncedCount} compromissos sincronizados com o Google Agenda!`);
+      } else {
+        showNotification('Google Agenda consultada: todos os compromissos estão em dia.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao sincronizar com Google Agenda:', err);
+      showNotification(`Erro ao sincronizar com Google Agenda: ${err?.message || err}`, 'error');
+    } finally {
+      setIsSyncingGoogle(false);
+    }
   };
 
   // --- INSCRIÇÃO EM TEMPO REAL NO FIRESTORE ---
@@ -237,6 +330,30 @@ export default function Dashboard() {
           : 'bg-purple-100 text-purple-800 border-purple-200';
 
       const selectedRoom = getRoomById(newEvent.roomId);
+      const roomLabel = newEvent.type === 'presencial' ? (selectedRoom ? selectedRoom.label : newEvent.roomName) : undefined;
+
+      let googleEventId: string | undefined = undefined;
+      let googleHtmlLink: string | undefined = undefined;
+
+      const activeToken = googleToken || await getAccessToken();
+      if (activeToken) {
+        try {
+          const gcalRes = await createGoogleCalendarEvent({
+            title: newEvent.title.trim(),
+            category: newEvent.category,
+            date: newEvent.date,
+            time: newEvent.time.trim(),
+            location: newEvent.location.trim(),
+            roomName: roomLabel,
+            clientEmail: newEvent.clientEmail.trim(),
+            clientWhatsApp: newEvent.clientWhatsApp.trim(),
+          }, activeToken);
+          googleEventId = gcalRes.googleEventId;
+          googleHtmlLink = gcalRes.htmlLink;
+        } catch (gcalErr) {
+          console.warn('Não foi possível gravar no Google Agenda:', gcalErr);
+        }
+      }
 
       const eventData: Omit<Evento, 'id'> = {
         title: newEvent.title.trim(),
@@ -246,12 +363,15 @@ export default function Dashboard() {
         location: newEvent.location.trim(),
         type: newEvent.type,
         roomId: newEvent.type === 'presencial' ? newEvent.roomId : undefined,
-        roomName: newEvent.type === 'presencial' ? (selectedRoom ? selectedRoom.label : newEvent.roomName) : undefined,
+        roomName: roomLabel,
         therapistId: newEvent.therapistId,
         clientEmail: newEvent.clientEmail.trim(),
         clientWhatsApp: newEvent.clientWhatsApp.trim(),
         badgeColor,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        googleEventId,
+        googleHtmlLink,
+        syncedWithGoogle: !!googleEventId
       };
 
       await saveEvent(eventData);
@@ -271,7 +391,11 @@ export default function Dashboard() {
         clientWhatsApp: ''
       });
 
-      showNotification('Compromisso gravado com sucesso com a sala confirmada!');
+      if (googleEventId) {
+        showNotification('Compromisso gravado e sincronizado com o Google Agenda com sucesso!');
+      } else {
+        showNotification('Compromisso gravado com sucesso com a sala confirmada!');
+      }
     } catch (err: any) {
       showNotification('Erro ao salvar agendamento: ' + (err.message || err), 'error');
     } finally {
@@ -279,13 +403,30 @@ export default function Dashboard() {
     }
   };
 
-  // --- EXCLUIR EVENTO ---
+  // --- EXCLUIR EVENTO (COM CONFIRMAÇÃO DE OPERAÇÃO DESTRUTIVA) ---
   const handleDeleteEvent = async (id: string, title: string) => {
-    if (!window.confirm(`Deseja realmente excluir "${title}"?`)) {
+    const targetEvent = events.find((e) => e.id === id);
+    const isGoogleSynced = !!targetEvent?.googleEventId;
+    const confirmMsg = isGoogleSynced
+      ? `Deseja realmente excluir "${title}"? Esta ação também removerá o compromisso do seu Google Agenda.`
+      : `Deseja realmente excluir "${title}"?`;
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
     try {
+      if (targetEvent?.googleEventId) {
+        const activeToken = googleToken || await getAccessToken();
+        if (activeToken) {
+          try {
+            await deleteGoogleCalendarEvent(targetEvent.googleEventId, activeToken);
+          } catch (gcalDelErr) {
+            console.warn('Erro ao excluir do Google Agenda:', gcalDelErr);
+          }
+        }
+      }
+
       await deleteEvent(id);
       if (selectedEventForDetails?.id === id) {
         setSelectedEventForDetails(null);
@@ -406,8 +547,31 @@ export default function Dashboard() {
     if (parsed.isBooking && parsed.items.length > 0) {
       try {
         const savedTitles: string[] = [];
+        const activeToken = googleToken || await getAccessToken();
+        let anyGcalSuccess = false;
 
         for (const item of parsed.items) {
+          let googleEventId: string | undefined = undefined;
+          let googleHtmlLink: string | undefined = undefined;
+
+          if (activeToken) {
+            try {
+              const gcalRes = await createGoogleCalendarEvent({
+                title: item.title,
+                category: item.category,
+                date: item.date,
+                time: item.time,
+                location: item.location,
+                roomName: item.roomName,
+              }, activeToken);
+              googleEventId = gcalRes.googleEventId;
+              googleHtmlLink = gcalRes.htmlLink;
+              anyGcalSuccess = true;
+            } catch (gcalErr) {
+              console.warn('Erro ao criar no Google Agenda:', gcalErr);
+            }
+          }
+
           const newEvt: Omit<Evento, 'id'> = {
             title: item.title,
             category: item.category,
@@ -425,7 +589,10 @@ export default function Dashboard() {
               : item.category === 'evento'
               ? 'bg-purple-100 text-purple-800 border-purple-200'
               : 'bg-emerald-100 text-emerald-800 border-emerald-200',
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            googleEventId,
+            googleHtmlLink,
+            syncedWithGoogle: !!googleEventId
           };
 
           await saveEvent(newEvt);
@@ -435,6 +602,9 @@ export default function Dashboard() {
         const firstItem = parsed.items[0];
         const [year, month, day] = firstItem.date.split('-');
         const formattedDate = day && month && year ? `${day}/${month}/${year}` : firstItem.date;
+        const gcalNotice = anyGcalSuccess
+          ? '\n\n📅 Sincronizado e salvo diretamente no Google Agenda!'
+          : (!activeToken ? '\n\n💡 Dica: Conecte sua conta do Google Agenda no topo da página para salvar seus agendamentos diretamente no calendário Google.' : '');
 
         if (parsed.items.length > 1) {
           const summaryList = parsed.items
@@ -445,16 +615,16 @@ export default function Dashboard() {
             ...prev,
             {
               sender: 'assistant',
-              text: `Perfeito! Agendei e reservei com sucesso na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!`
+              text: `Perfeito! Agendei e reservei na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!${gcalNotice}`
             }
           ]);
-          showNotification(`${parsed.items.length} agendamentos registrados na agenda com sucesso!`);
+          showNotification(`${parsed.items.length} agendamentos registrados com sucesso!`);
         } else {
           setChatMessages((prev) => [
             ...prev,
             {
               sender: 'assistant',
-              text: `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!`
+              text: `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!${gcalNotice}`
             }
           ]);
           showNotification('Compromisso registrado na agenda e sala reservada!');
@@ -648,6 +818,43 @@ export default function Dashboard() {
               </button>
             )}
 
+            {/* Status / Botão Google Agenda */}
+            {googleUser ? (
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+                  <span className="text-xs font-semibold text-blue-900 hidden sm:inline" title={googleUser.email || ''}>
+                    Google Agenda
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSyncGoogleCalendar()}
+                  disabled={isSyncingGoogle}
+                  title="Sincronizar com Google Agenda"
+                  className="p-1 hover:bg-blue-100 rounded text-blue-700 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGoogle ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                disabled={isConnectingGoogle}
+                title="Conectar com o Google Agenda para sincronizar seus compromissos"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                </svg>
+                <span>{isConnectingGoogle ? 'Conectando...' : 'Google Agenda'}</span>
+              </button>
+            )}
+
             <button 
               onClick={() => openNewEventAt()}
               className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all cursor-pointer"
@@ -658,6 +865,52 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Banner de Sincronização com Google Agenda */}
+      {!googleUser ? (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-4 py-2.5">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-blue-900">
+              <div className="w-6 h-6 rounded-md bg-white border border-blue-200 flex items-center justify-center shrink-0 shadow-2xs">
+                <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <p className="font-medium">
+                <strong className="font-bold text-blue-950">Sincronização com Google Agenda:</strong> Conecte sua conta do Google para manter e salvar todos os agendamentos diretamente no seu calendário.
+              </p>
+            </div>
+            <button
+              onClick={handleConnectGoogle}
+              disabled={isConnectingGoogle}
+              className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer text-xs"
+            >
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+              </svg>
+              <span>{isConnectingGoogle ? 'Conectando...' : 'Conectar Google Agenda'}</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-emerald-50/70 border-b border-emerald-200/80 px-4 py-1.5">
+          <div className="max-w-7xl mx-auto flex items-center justify-between text-xs text-emerald-900">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Google Agenda conectado ({googleUser.email}) — Agendamentos sincronizados com seu calendário.</span>
+            </div>
+            <button
+              onClick={() => handleSyncGoogleCalendar()}
+              disabled={isSyncingGoogle}
+              className="font-semibold text-emerald-800 hover:text-emerald-950 underline cursor-pointer inline-flex items-center gap-1"
+            >
+              <RefreshCw className={`w-3 h-3 ${isSyncingGoogle ? 'animate-spin' : ''}`} />
+              <span>{isSyncingGoogle ? 'Sincronizando...' : 'Sincronizar agora'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full grid grid-cols-1 lg:grid-cols-3 gap-8">

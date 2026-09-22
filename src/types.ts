@@ -35,6 +35,9 @@ export interface Evento {
   clientWhatsApp?: string;
   badgeColor: string;
   createdAt?: string;
+  googleEventId?: string;
+  googleHtmlLink?: string;
+  syncedWithGoogle?: boolean;
 }
 
 export interface TherapistUser {

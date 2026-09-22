@@ -61,7 +61,7 @@ export function EventDetailsModal({ event, onClose, onDelete, therapists, curren
         {/* Cabeçalho do Modal */}
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${event.badgeColor}`}>
                 {event.category.toUpperCase()}
               </span>
@@ -70,6 +70,12 @@ export function EventDetailsModal({ event, onClose, onDelete, therapists, curren
               }`}>
                 {event.type === 'online' ? 'Online' : 'Presencial'}
               </span>
+              {(event.syncedWithGoogle || event.googleEventId) && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                  Google Agenda
+                </span>
+              )}
             </div>
             <h3 className="text-lg font-bold text-slate-900">{event.title}</h3>
           </div>
@@ -240,12 +246,25 @@ export function EventDetailsModal({ event, onClose, onDelete, therapists, curren
             </span>
           )}
 
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg transition-colors cursor-pointer"
-          >
-            Fechar
-          </button>
+          <div className="flex items-center gap-2">
+            {event.googleHtmlLink && (
+              <a
+                href={event.googleHtmlLink}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-lg border border-blue-200 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Abrir no Google Agenda
+              </a>
+            )}
+
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
 
       </div>

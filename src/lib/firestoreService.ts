@@ -73,6 +73,29 @@ export const DEFAULT_EVENTS: Evento[] = [
 const EVENTS_COLLECTION = 'events';
 const USERS_COLLECTION = 'users';
 
+const LOCAL_EVENTS_KEY = 'renovaser_cached_events_v2';
+
+export function getCachedLocalEvents(): Evento[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_EVENTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('Erro ao ler cache local de eventos:', e);
+  }
+  return DEFAULT_EVENTS;
+}
+
+export function setCachedLocalEvents(events: Evento[]): void {
+  try {
+    localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(events));
+  } catch (e) {
+    console.warn('Erro ao gravar cache local de eventos:', e);
+  }
+}
+
 /**
  * Escuta em tempo real os eventos cadastrados no Firestore
  */
@@ -83,6 +106,12 @@ export function subscribeToEvents(
   const path = EVENTS_COLLECTION;
   const colRef = collection(db, EVENTS_COLLECTION);
 
+  // Fornece imediatamente os eventos em cache para evitar telas vazias
+  const localInitial = getCachedLocalEvents();
+  if (localInitial.length > 0) {
+    callback(localInitial);
+  }
+
   let hasSeeded = false;
 
   return onSnapshot(
@@ -90,12 +119,13 @@ export function subscribeToEvents(
     async (snapshot) => {
       if (snapshot.empty && !hasSeeded) {
         hasSeeded = true;
-        // Inicializar com dados padrão caso o banco esteja vazio
+        // Inicializar com dados padrão ou cache caso o banco esteja vazio
         try {
-          for (const ev of DEFAULT_EVENTS) {
+          const eventsToSeed = localInitial.length > 0 ? localInitial : DEFAULT_EVENTS;
+          for (const ev of eventsToSeed) {
             await setDoc(doc(db, EVENTS_COLLECTION, ev.id), ev);
           }
-          callback(DEFAULT_EVENTS);
+          callback(eventsToSeed);
           return;
         } catch (seedErr) {
           console.warn('Erro ao inicializar eventos padrão no Firestore:', seedErr);
@@ -126,12 +156,17 @@ export function subscribeToEvents(
               ? 'bg-blue-100 text-blue-800 border-blue-200'
               : 'bg-purple-100 text-purple-800 border-purple-200'),
           createdAt: data.createdAt,
+          googleEventId: data.googleEventId,
+          googleHtmlLink: data.googleHtmlLink,
+          syncedWithGoogle: data.syncedWithGoogle,
         });
       });
 
       // Ordenar por data e horário
       items.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-      callback(items.length > 0 ? items : DEFAULT_EVENTS);
+      const finalEvents = items.length > 0 ? items : localInitial;
+      setCachedLocalEvents(finalEvents);
+      callback(finalEvents);
     },
     (error: any) => {
       const isPerm =
@@ -143,23 +178,42 @@ export function subscribeToEvents(
         handleFirestoreError(error, OperationType.GET, path);
       }
       console.warn('Events subscription error (offline/transient):', error?.message || error);
+      // Fallback seguro em caso de indisponibilidade
+      const cached = getCachedLocalEvents();
+      callback(cached);
       if (onError) onError(error);
     }
   );
 }
 
 /**
- * Salva ou atualiza um evento no Firestore
+ * Salva ou atualiza um evento no Firestore e no cache local
  */
 export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Promise<string> {
   const path = EVENTS_COLLECTION;
   const eventId = event.id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const eventDoc = doc(db, EVENTS_COLLECTION, eventId);
-  const dataToSave = {
+  const dataToSave: Evento = {
     ...event,
     id: eventId,
     createdAt: event.createdAt || new Date().toISOString(),
   };
+
+  // Atualizar cache local imediatamente
+  try {
+    const cached = getCachedLocalEvents();
+    const idx = cached.findIndex((e) => e.id === eventId);
+    let updated: Evento[];
+    if (idx >= 0) {
+      updated = [...cached];
+      updated[idx] = dataToSave;
+    } else {
+      updated = [...cached, dataToSave];
+    }
+    setCachedLocalEvents(updated);
+  } catch (cacheErr) {
+    console.warn('Erro ao atualizar cache local:', cacheErr);
+  }
 
   try {
     const writePromise = setDoc(eventDoc, dataToSave, { merge: true });
@@ -175,16 +229,27 @@ export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Pr
     if (isPerm) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
-    console.error('Erro ao salvar evento no Firestore:', err);
-    throw err;
+    console.error('Erro ao salvar evento no Firestore (mantido localmente):', err);
+    // Não relança erro fatal se o cache local já salvou com sucesso
+    return eventId;
   }
 }
 
 /**
- * Exclui um evento do Firestore
+ * Exclui um evento do Firestore e do cache local
  */
 export async function deleteEvent(eventId: string): Promise<void> {
   const path = `${EVENTS_COLLECTION}/${eventId}`;
+
+  // Atualizar cache local imediatamente
+  try {
+    const cached = getCachedLocalEvents();
+    const filtered = cached.filter((e) => e.id !== eventId);
+    setCachedLocalEvents(filtered);
+  } catch (cacheErr) {
+    console.warn('Erro ao remover do cache local:', cacheErr);
+  }
+
   try {
     const eventDoc = doc(db, EVENTS_COLLECTION, eventId);
     await deleteDoc(eventDoc);
@@ -198,7 +263,6 @@ export async function deleteEvent(eventId: string): Promise<void> {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
     console.error('Erro ao excluir evento do Firestore:', err);
-    throw err;
   }
 }
 
