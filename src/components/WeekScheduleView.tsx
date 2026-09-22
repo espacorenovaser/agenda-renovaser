@@ -8,9 +8,12 @@ import {
   Video, 
   Plus, 
   MessageCircle,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  DoorOpen,
+  Layers
 } from 'lucide-react';
 import type { Evento, TherapistUser } from '../types';
+import { getRoomById } from '../lib/roomService';
 
 interface WeekScheduleViewProps {
   events: Evento[];
@@ -175,9 +178,20 @@ export function WeekScheduleView({
                         </h4>
 
                         {/* Horário Completo */}
-                        <p className="text-[10px] font-mono text-slate-600 font-medium">
-                          {evt.time}
-                        </p>
+                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                          <span className="font-mono text-slate-600 font-medium">
+                            {evt.time}
+                          </span>
+                          {evt.roomId && (
+                            <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded border truncate max-w-[110px] ${
+                              evt.roomId === 'auditorio'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`} title={evt.roomName || getRoomById(evt.roomId)?.label}>
+                              {getRoomById(evt.roomId)?.code || 'Sala'}
+                            </span>
+                          )}
+                        </div>
 
                         {/* Responsável e Modalidade */}
                         <div className="pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">

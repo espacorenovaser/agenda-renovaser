@@ -143,8 +143,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
           <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
 
           <div className="relative z-10 flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center mb-3 shadow-inner">
-              <Compass className="w-7 h-7 text-emerald-300" />
+            <div className="w-16 h-16 rounded-2xl bg-white p-1 shadow-md border border-white/20 flex items-center justify-center mb-3">
+              <img
+                src="/LogoAgenda.png"
+                alt="Instituto RenovaSer"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
               Instituto RenovaSer

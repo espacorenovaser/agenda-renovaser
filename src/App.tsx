@@ -25,9 +25,11 @@ import {
   LogOut,
   KeyRound,
   Shield,
-  UserCheck
+  UserCheck,
+  DoorOpen,
+  Layers
 } from 'lucide-react';
-import type { Evento, TherapistUser } from './types';
+import type { Evento, TherapistUser, RoomId } from './types';
 import { 
   subscribeToEvents, 
   saveEvent, 
@@ -38,6 +40,12 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/firestoreService';
+import { 
+  getRoomById, 
+  checkRoomAvailability, 
+  validateRoomBooking,
+  RENOVASER_ROOMS 
+} from './lib/roomService';
 import { getCurrentSessionUser, logoutSession } from './lib/authService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
@@ -46,6 +54,8 @@ import { WeekScheduleView } from './components/WeekScheduleView';
 import { MonthScheduleView } from './components/MonthScheduleView';
 import { EventDetailsModal } from './components/EventDetailsModal';
 import { WeeklyAttendanceSummary } from './components/WeeklyAttendanceSummary';
+import { RoomSelector } from './components/RoomSelector';
+import { RoomsOccupancyBar } from './components/RoomsOccupancyBar';
 
 export default function Dashboard() {
   // --- ESTADO DE AUTENTICAÇÃO E SESSÃO ---
@@ -64,6 +74,7 @@ export default function Dashboard() {
   const [activeCategory, setActiveCategory] = useState<'all' | 'atendimento' | 'reuniao' | 'evento'>('all');
   const [viewPeriod, setViewPeriod] = useState<'dia' | 'semana' | 'mes' | 'todos'>('dia');
   const [selectedTherapist, setSelectedTherapist] = useState<string>('todos');
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState<RoomId | 'todos'>('todos');
   const [selectedDateForDay, setSelectedDateForDay] = useState<string>(todayStr);
 
   // --- ESTADOS DE MODAIS ---
@@ -78,8 +89,10 @@ export default function Dashboard() {
     category: 'atendimento' as 'atendimento' | 'reuniao' | 'evento',
     date: todayStr,
     time: '14:00 - 15:00',
-    location: 'Sala do Instituto RenovaSer',
+    location: 'Sala 1 • Harmonia',
     type: 'presencial' as 'presencial' | 'online',
+    roomId: 'sala_1' as RoomId,
+    roomName: 'Sala 1 • Harmonia',
     therapistId: 'admin1',
     clientEmail: '',
     clientWhatsApp: ''
@@ -149,7 +162,7 @@ export default function Dashboard() {
   }, [therapists]);
 
   // Abrir modal de novo evento pré-configurado
-  const openNewEventAt = (dateStr?: string, hourStr?: string) => {
+  const openNewEventAt = (dateStr?: string, hourStr?: string, preferredRoomId?: RoomId) => {
     const targetDate = dateStr || todayStr;
     let targetTime = '14:00 - 15:00';
     if (hourStr) {
@@ -167,11 +180,19 @@ export default function Dashboard() {
         ? (therapists.find((t) => t.email.toLowerCase() === currentUser.email.toLowerCase())?.id || currentUser.id)
         : (selectedTherapist !== 'todos' ? selectedTherapist : (therapists[0]?.id || 'admin1'));
 
+    // Calcular sala recomendada ou utilizar a preferida
+    const availability = checkRoomAvailability(targetDate, targetTime, events);
+    const chosenRoomId: RoomId = preferredRoomId || availability.firstAvailableRoomId || 'sala_1';
+    const roomObj = getRoomById(chosenRoomId);
+
     setNewEvent((prev) => ({
       ...prev,
       date: targetDate,
       time: targetTime,
-      therapistId: assignedTherapistId
+      therapistId: assignedTherapistId,
+      roomId: chosenRoomId,
+      roomName: roomObj ? roomObj.label : 'Sala 1 • Harmonia',
+      location: roomObj ? roomObj.label : 'Sala 1 • Harmonia'
     }));
     setShowNewEventModal(true);
   };
@@ -189,6 +210,22 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newEvent.title.trim()) return;
 
+    // Validação de alocação de espaço físico (Salas 1, 2, 3 e Auditório)
+    if (newEvent.type === 'presencial') {
+      const roomValidation = validateRoomBooking(
+        newEvent.roomId,
+        newEvent.type,
+        newEvent.date,
+        newEvent.time,
+        events
+      );
+
+      if (!roomValidation.valid) {
+        showNotification(roomValidation.errorMessage || 'Espaço físico indisponível neste horário.', 'error');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const badgeColor =
@@ -198,6 +235,8 @@ export default function Dashboard() {
           ? 'bg-blue-100 text-blue-800 border-blue-200'
           : 'bg-purple-100 text-purple-800 border-purple-200';
 
+      const selectedRoom = getRoomById(newEvent.roomId);
+
       const eventData: Omit<Evento, 'id'> = {
         title: newEvent.title.trim(),
         category: newEvent.category,
@@ -205,6 +244,8 @@ export default function Dashboard() {
         date: newEvent.date,
         location: newEvent.location.trim(),
         type: newEvent.type,
+        roomId: newEvent.type === 'presencial' ? newEvent.roomId : undefined,
+        roomName: newEvent.type === 'presencial' ? (selectedRoom ? selectedRoom.label : newEvent.roomName) : undefined,
         therapistId: newEvent.therapistId,
         clientEmail: newEvent.clientEmail.trim(),
         clientWhatsApp: newEvent.clientWhatsApp.trim(),
@@ -220,14 +261,16 @@ export default function Dashboard() {
         category: 'atendimento',
         date: todayStr,
         time: '14:00 - 15:00',
-        location: 'Sala do Instituto RenovaSer',
+        location: 'Sala 1 • Harmonia',
         type: 'presencial',
+        roomId: 'sala_1',
+        roomName: 'Sala 1 • Harmonia',
         therapistId: therapists[0]?.id || 'admin1',
         clientEmail: '',
         clientWhatsApp: ''
       });
 
-      showNotification('Compromisso gravado com sucesso!');
+      showNotification('Compromisso gravado com sucesso com a sala confirmada!');
     } catch (err: any) {
       showNotification('Erro ao salvar agendamento: ' + (err.message || err), 'error');
     } finally {
@@ -382,11 +425,33 @@ export default function Dashboard() {
         titleVal = `Atendimento Clínico`;
       }
 
+      const categoryVal: 'reuniao' | 'atendimento' | 'evento' = isReuniao ? 'reuniao' : 'atendimento';
+
+      // Alocação inteligente de espaço físico (Salas 1, 2, 3 ou Auditório modular)
+      let assignedRoomId: RoomId | undefined = undefined;
+      let assignedRoomName: string | undefined = undefined;
+
+      if (!isOnline) {
+        if (lower.includes('auditório') || lower.includes('auditorio') || lower.includes('salão') || lower.includes('salao') || lower.includes('evento')) {
+          assignedRoomId = 'auditorio';
+        } else if (lower.includes('sala 3') || lower.includes('vitalidade')) {
+          assignedRoomId = 'sala_3';
+        } else if (lower.includes('sala 2') || lower.includes('serenidade')) {
+          assignedRoomId = 'sala_2';
+        } else if (lower.includes('sala 1') || lower.includes('harmonia')) {
+          assignedRoomId = 'sala_1';
+        } else {
+          // Busca a primeira sala disponível sem conflitos físicos
+          const availability = checkRoomAvailability(dateVal, timeVal, events);
+          assignedRoomId = availability.firstAvailableRoomId || 'sala_1';
+        }
+        const roomObj = getRoomById(assignedRoomId);
+        assignedRoomName = roomObj ? roomObj.label : 'Sala 1 • Harmonia';
+      }
+
       const locationVal = isOnline
         ? 'Online - Google Meet'
-        : 'Sala do Instituto RenovaSer';
-
-      const categoryVal: 'reuniao' | 'atendimento' | 'evento' = isReuniao ? 'reuniao' : 'atendimento';
+        : (assignedRoomName || 'Sala do Instituto RenovaSer');
 
       const newEvt: Omit<Evento, 'id'> = {
         title: titleVal,
@@ -395,6 +460,8 @@ export default function Dashboard() {
         date: dateVal,
         location: locationVal,
         type: isOnline ? 'online' : 'presencial',
+        roomId: assignedRoomId,
+        roomName: assignedRoomName,
         therapistId: therapists[0]?.id || 'admin1',
         clientEmail: '',
         clientWhatsApp: '',
@@ -406,14 +473,15 @@ export default function Dashboard() {
 
       try {
         await saveEvent(newEvt);
+        const roomInfo = assignedRoomName ? ` (${assignedRoomName})` : '';
         setChatMessages((prev) => [
           ...prev,
           {
             sender: 'assistant',
-            text: `Perfeito! Agendei e gravei diretamente no Firebase: "${titleVal}" para ${dateVal} às ${timeVal} (${isOnline ? 'Online' : 'Presencial'}). Já visível no painel!`
+            text: `Perfeito! Agendei e reservei no Firebase: "${titleVal}" para ${dateVal} às ${timeVal} no espaço ${roomInfo || (isOnline ? 'Online' : 'Presencial')}. O espaço físico já foi reservado!`
           }
         ]);
-        showNotification('Compromisso agendado pela IA e salvo no Firebase!');
+        showNotification('Compromisso agendado pela IA e sala reservada!');
       } catch (err: any) {
         setChatMessages((prev) => [
           ...prev,
@@ -458,8 +526,9 @@ export default function Dashboard() {
 
     const matchCategory = activeCategory === 'all' || e.category === activeCategory;
     const matchTherapist = selectedTherapist === 'todos' || e.therapistId === selectedTherapist;
+    const matchRoom = selectedRoomFilter === 'todos' || e.roomId === selectedRoomFilter;
 
-    return matchCategory && matchTherapist;
+    return matchCategory && matchTherapist && matchRoom;
   });
 
   // Mapeamento de Terapeuta
@@ -501,8 +570,20 @@ export default function Dashboard() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-              RS
+            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 overflow-hidden flex items-center justify-center shadow-2xs shrink-0 p-0.5">
+              <img 
+                src="/LogoAgenda.png" 
+                alt="Instituto RenovaSer" 
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                  const parent = (e.currentTarget as HTMLElement).parentElement;
+                  if (parent) {
+                    parent.className = 'w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-bold text-sm shadow-2xs';
+                    parent.textContent = 'RS';
+                  }
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -607,26 +688,6 @@ export default function Dashboard() {
         {/* Painel Principal */}
         <section className="lg:col-span-2 space-y-6">
           
-          {/* Banner */}
-          <div className="bg-gradient-to-r from-emerald-800 to-teal-700 rounded-2xl p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <span className="text-xs uppercase font-bold tracking-wider text-emerald-200 flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5" /> Sincronização em Nuvem
-              </span>
-              <h2 className="text-2xl font-bold mt-1">Transformação e Desenvolvimento Humano</h2>
-              <p className="text-emerald-100 text-sm mt-1">
-                Acompanhe e gerencie os atendimentos, reuniões e eventos com facilidade e precisão.
-              </p>
-            </div>
-            <button
-              onClick={scrollToSummary}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-xs font-semibold text-white transition-all backdrop-blur-xs shrink-0 self-start sm:self-auto shadow-2xs"
-            >
-              <BarChart3 className="w-4 h-4 text-emerald-300" />
-              Ver Resumo Semanal
-            </button>
-          </div>
-
           {/* Barra de Filtros e Seleção de Período */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
@@ -708,6 +769,16 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+
+          {/* Painel de Ocupação e Gestão dos Espaços Físicos (Salas 1, 2, 3 e Auditório) */}
+          <RoomsOccupancyBar
+            events={events}
+            selectedDate={selectedDateForDay}
+            therapists={therapists}
+            selectedRoomFilter={selectedRoomFilter}
+            onSelectRoomFilter={setSelectedRoomFilter}
+            onQuickBookRoom={(roomId) => openNewEventAt(selectedDateForDay, undefined, roomId)}
+          />
 
           {/* Área Principal dos Agendamentos (Renderização Baseada no Período Selecionado) */}
           <div>
@@ -1109,7 +1180,7 @@ export default function Dashboard() {
                 </div>
 
                 <div>
-                  <label className="font-medium text-slate-700 block mb-1">Local / Link</label>
+                  <label className="font-medium text-slate-700 block mb-1">Local / Detalhe</label>
                   <input
                     type="text"
                     required
@@ -1119,6 +1190,25 @@ export default function Dashboard() {
                   />
                 </div>
               </div>
+
+              {/* SELETOR DE ESPAÇO FÍSICO (SALAS 1, 2, 3 E AUDITÓRIO) */}
+              {newEvent.type === 'presencial' && (
+                <RoomSelector
+                  selectedRoomId={newEvent.roomId}
+                  date={newEvent.date}
+                  time={newEvent.time}
+                  events={events}
+                  onChangeRoom={(roomId) => {
+                    const r = getRoomById(roomId);
+                    setNewEvent((prev) => ({
+                      ...prev,
+                      roomId,
+                      roomName: r ? r.label : roomId,
+                      location: r ? r.label : prev.location
+                    }));
+                  }}
+                />
+              )}
 
               {/* BLOCO DE NOTIFICAÇÃO ANTECIPADA: WHATSAPP E E-MAIL DO CLIENTE */}
               <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-2.5">

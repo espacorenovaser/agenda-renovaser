@@ -11,9 +11,12 @@ import {
   MessageCircle, 
   Trash2, 
   ExternalLink,
-  Bell
+  Bell,
+  DoorOpen,
+  Layers
 } from 'lucide-react';
 import type { Evento, TherapistUser } from '../types';
+import { getRoomById } from '../lib/roomService';
 
 interface EventDetailsModalProps {
   event: Evento | null;
@@ -117,10 +120,50 @@ export function EventDetailsModal({ event, onClose, onDelete, therapists, curren
               ) : (
                 <MapPin className="w-3.5 h-3.5 text-emerald-500" />
               )}
-              {event.type === 'online' ? 'Link da Sala Online' : 'Local do Atendimento'}
+              {event.type === 'online' ? 'Link da Sala Online' : 'Local / Endereço'}
             </span>
             <p className="font-semibold text-slate-800 break-all">{event.location}</p>
           </div>
+
+          {/* Sala / Espaço Físico Alocado */}
+          {event.type !== 'online' && (
+            <div className={`p-3.5 rounded-xl border sm:col-span-2 space-y-1.5 ${
+              event.roomId === 'auditorio'
+                ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950'
+                : 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold flex items-center gap-1.5 uppercase tracking-wider text-slate-600">
+                  {event.roomId === 'auditorio' ? (
+                    <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                  ) : (
+                    <DoorOpen className="w-3.5 h-3.5 text-emerald-600" />
+                  )}
+                  Espaço Físico RenovaSer
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  event.roomId === 'auditorio'
+                    ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                    : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                }`}>
+                  {event.roomId === 'auditorio' ? 'Salão Integrado Modular' : (getRoomById(event.roomId)?.code || 'Sala Individual')}
+                </span>
+              </div>
+              <p className="text-sm font-bold text-slate-900">
+                {event.roomName || getRoomById(event.roomId)?.label || 'Sala de Atendimento RenovaSer'}
+              </p>
+              {getRoomById(event.roomId)?.purpose && (
+                <p className="text-[11px] text-slate-600">
+                  {getRoomById(event.roomId)?.purpose}
+                </p>
+              )}
+              {event.roomId === 'auditorio' && (
+                <p className="text-[10px] text-indigo-700 bg-white/70 p-2 rounded-lg border border-indigo-100 font-medium">
+                  ℹ️ Este evento ocupa o salão completo, com as 3 salas integradas (divisórias abertas).
+                </p>
+              )}
+            </div>
+          )}
 
         </div>
 

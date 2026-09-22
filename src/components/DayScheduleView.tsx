@@ -9,9 +9,12 @@ import {
   Video, 
   User, 
   Phone,
-  MessageCircle
+  MessageCircle,
+  DoorOpen,
+  Layers
 } from 'lucide-react';
 import type { Evento, TherapistUser } from '../types';
+import { getRoomById } from '../lib/roomService';
 
 interface DayScheduleViewProps {
   events: Evento[];
@@ -178,6 +181,22 @@ export function DayScheduleView({
                       )}
                       {evt.location}
                     </span>
+
+                    {/* Tag da Sala Alocada */}
+                    {evt.roomId && (
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
+                        evt.roomId === 'auditorio'
+                          ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      }`}>
+                        {evt.roomId === 'auditorio' ? (
+                          <Layers className="w-3 h-3 text-indigo-600 shrink-0" />
+                        ) : (
+                          <DoorOpen className="w-3 h-3 text-emerald-600 shrink-0" />
+                        )}
+                        {evt.roomName || getRoomById(evt.roomId)?.label || evt.roomId}
+                      </span>
+                    )}
                   </div>
 
                   {/* Sinalização de WhatsApp/E-mail de notificação */}

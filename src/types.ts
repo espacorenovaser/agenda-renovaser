@@ -1,5 +1,25 @@
 export type ScheduleCategory = 'atendimento' | 'reuniao' | 'evento' | 'comunicacao';
 
+export type RoomId = 'sala_1' | 'sala_2' | 'sala_3' | 'auditorio';
+
+export interface Room {
+  id: RoomId;
+  name: string; // Ex: "Harmonia"
+  label: string; // Ex: "Sala 1 - Harmonia"
+  code: string; // Ex: "Sala 1"
+  purpose: string; // Propósito terapêutico / acolhimento
+  capacity: string;
+  themeColor: {
+    bg: string;
+    text: string;
+    border: string;
+    badge: string;
+    dot: string;
+  };
+  isIntegrated?: boolean; // Auditório abrange as 3 salas
+  subRooms?: RoomId[]; // ['sala_1', 'sala_2', 'sala_3']
+}
+
 export interface Evento {
   id: string;
   title: string;
@@ -9,6 +29,8 @@ export interface Evento {
   location: string;
   type: 'presencial' | 'online';
   therapistId: string;
+  roomId?: RoomId; // Sala 1, Sala 2, Sala 3 ou Auditório
+  roomName?: string; // Nome descritivo da sala
   clientEmail?: string;
   clientWhatsApp?: string;
   badgeColor: string;
