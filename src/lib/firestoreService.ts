@@ -29,10 +29,12 @@ export async function testConnection() {
 testConnection().catch(() => {});
 
 export const DEFAULT_THERAPISTS: TherapistUser[] = [
-  { id: 'admin1', name: 'Claudir Israel (Admin)', email: 'claudirisrael@gmail.com', role: 'admin' },
-  { id: 'admin2', name: 'Maria Gorete (Admin)', email: 'mmgorete00@gmail.com', role: 'admin' },
-  { id: 'admin3', name: 'Cleci Marchioro (Admin)', email: 'clecimarchioro@gmail.com', role: 'admin' },
-  { id: 'terapeuta1', name: 'Dr. Lucas (Terapeuta)', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta', technique: 'Psicoterapia' }
+  { id: 'admin1', name: 'Claudir Israel', email: 'claudirisrael@gmail.com', role: 'admin', password: 'Rs12345678' },
+  { id: 'admin2', name: 'Maria Gorete', email: 'mmgorete00@gmail.com', role: 'admin', password: 'Rs12345678' },
+  { id: 'admin3', name: 'Cleci Marchioro', email: 'clecimarchioro@gmail.com', role: 'admin', password: 'Rs12345678' },
+  { id: 'admin4', name: 'Espaço RenovaSer', email: 'espacorenovaser@gmail.com', role: 'admin', password: 'renovaser123' },
+  { id: 'terapeuta1', name: 'Dr. Lucas', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta', technique: 'Psicoterapia', password: 'renovaser123' },
+  { id: 'terapeuta2', name: 'Adriana Israel', email: 'acky0608@gmail.com', role: 'terapeuta', technique: 'Tarô', password: 'renovaser123' }
 ];
 
 export const DEFAULT_EVENTS: Evento[] = [
@@ -238,6 +240,7 @@ export function subscribeToTherapists(
             email: data.email,
             role: data.role === 'admin' ? 'admin' : 'terapeuta',
             technique: data.technique || '',
+            password: data.password || 'renovaser123',
             createdAt: data.createdAt,
           });
         }
@@ -272,6 +275,7 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
     name: therapist.name,
     email: therapist.email,
     role: therapist.role || 'terapeuta',
+    password: therapist.password || 'renovaser123',
     createdAt: therapist.createdAt || new Date().toISOString(),
   };
   if (therapist.technique) {
@@ -293,6 +297,29 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
       handleFirestoreError(err, OperationType.WRITE, path);
     }
     console.error('Erro ao salvar terapeuta/usuário no Firestore:', err);
+    throw err;
+  }
+}
+
+/**
+ * Atualiza a senha de um terapeuta/usuário no Firestore
+ */
+export async function updateTherapistPassword(userId: string, newPassword: string): Promise<void> {
+  const path = USERS_COLLECTION;
+  const userDoc = doc(db, USERS_COLLECTION, userId);
+  try {
+    const writePromise = setDoc(userDoc, { password: newPassword }, { merge: true });
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 4000));
+    await Promise.race([writePromise, timeoutPromise]);
+  } catch (err: any) {
+    const isPerm =
+      err?.code === 'permission-denied' ||
+      err?.message?.includes('permission-denied') ||
+      err?.message?.includes('Missing or insufficient permissions');
+    if (isPerm) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+    console.error('Erro ao atualizar senha no Firestore:', err);
     throw err;
   }
 }

@@ -21,6 +21,7 @@ export interface TherapistUser {
   email: string;
   role: 'admin' | 'terapeuta';
   technique?: string; // ex: Reiki, Tarô, Florais, etc.
+  password?: string; // Senha individual de acesso ao sistema
   createdAt?: string;
 }
 

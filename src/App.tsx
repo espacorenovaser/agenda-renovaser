@@ -21,7 +21,11 @@ import {
   MessageCircle,
   Phone,
   Bell,
-  BarChart3
+  BarChart3,
+  LogOut,
+  KeyRound,
+  Shield,
+  UserCheck
 } from 'lucide-react';
 import type { Evento, TherapistUser } from './types';
 import { 
@@ -34,6 +38,9 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/firestoreService';
+import { getCurrentSessionUser, logoutSession } from './lib/authService';
+import { LoginScreen } from './components/LoginScreen';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
 import { WeekScheduleView } from './components/WeekScheduleView';
 import { MonthScheduleView } from './components/MonthScheduleView';
@@ -41,6 +48,10 @@ import { EventDetailsModal } from './components/EventDetailsModal';
 import { WeeklyAttendanceSummary } from './components/WeeklyAttendanceSummary';
 
 export default function Dashboard() {
+  // --- ESTADO DE AUTENTICAÇÃO E SESSÃO ---
+  const [currentUser, setCurrentUser] = useState<TherapistUser | null>(() => getCurrentSessionUser());
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+
   // --- ESTADOS DO FIRESTORE ---
   const [events, setEvents] = useState<Evento[]>(DEFAULT_EVENTS);
   const [therapists, setTherapists] = useState<TherapistUser[]>(DEFAULT_THERAPISTS);
@@ -79,7 +90,8 @@ export default function Dashboard() {
     name: '',
     email: '',
     role: 'terapeuta' as 'admin' | 'terapeuta',
-    technique: ''
+    technique: '',
+    password: 'renovaser123'
   });
 
   // --- ESTADO DO CHAT / ASSISTENTE ---
@@ -149,10 +161,17 @@ export default function Dashboard() {
         targetTime = `${hourStr} - ${nextH}:00`;
       }
     }
+
+    const assignedTherapistId =
+      currentUser?.role === 'terapeuta'
+        ? (therapists.find((t) => t.email.toLowerCase() === currentUser.email.toLowerCase())?.id || currentUser.id)
+        : (selectedTherapist !== 'todos' ? selectedTherapist : (therapists[0]?.id || 'admin1'));
+
     setNewEvent((prev) => ({
       ...prev,
       date: targetDate,
-      time: targetTime
+      time: targetTime,
+      therapistId: assignedTherapistId
     }));
     setShowNewEventModal(true);
   };
@@ -243,6 +262,7 @@ export default function Dashboard() {
     const candidateEmail = newUser.email.trim();
     const candidateRole = newUser.role;
     const candidateTechnique = newUser.technique.trim();
+    const candidatePassword = newUser.password.trim() || 'renovaser123';
 
     try {
       const generatedId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -252,7 +272,7 @@ export default function Dashboard() {
         const exists = prev.some((t) => t.email.toLowerCase() === candidateEmail.toLowerCase());
         if (exists) {
           return prev.map((t) => t.email.toLowerCase() === candidateEmail.toLowerCase()
-            ? { ...t, name: candidateName, role: candidateRole, technique: candidateTechnique }
+            ? { ...t, name: candidateName, role: candidateRole, technique: candidateTechnique, password: candidatePassword }
             : t
           );
         }
@@ -264,6 +284,7 @@ export default function Dashboard() {
             email: candidateEmail,
             role: candidateRole,
             technique: candidateTechnique,
+            password: candidatePassword,
             createdAt: new Date().toISOString(),
           }
         ];
@@ -275,11 +296,12 @@ export default function Dashboard() {
         email: candidateEmail,
         role: candidateRole,
         technique: candidateTechnique || undefined,
+        password: candidatePassword,
         createdAt: new Date().toISOString()
       });
 
       setShowNewUserModal(false);
-      setNewUser({ name: '', email: '', role: 'terapeuta', technique: '' });
+      setNewUser({ name: '', email: '', role: 'terapeuta', technique: '', password: 'renovaser123' });
       showNotification(`Profissional "${candidateName}" cadastrado com sucesso!`);
     } catch (err: any) {
       console.error('Erro ao cadastrar profissional:', err);
@@ -415,8 +437,25 @@ export default function Dashboard() {
     }
   };
 
-  // --- FILTRAGEM DE EVENTOS ---
+  // --- FILTRAGEM DE EVENTOS COM CONTROLE DE ACESSO (RBAC) ---
   const filteredEvents = events.filter((e) => {
+    // REGRA DE ACESSO: Terapeutas visualizam exclusivamente o que lhes diz respeito
+    if (currentUser?.role === 'terapeuta') {
+      const isMyEvent =
+        e.therapistId === currentUser.id ||
+        (therapists.find((t) => t.id === e.therapistId)?.email.toLowerCase() === currentUser.email.toLowerCase());
+      
+      const isGeneralTeamEvent =
+        (e.category === 'reuniao' || e.category === 'evento') &&
+        (e.title.toLowerCase().includes('equipe') ||
+         e.title.toLowerCase().includes('instituto') ||
+         e.title.toLowerCase().includes('geral'));
+
+      if (!isMyEvent && !isGeneralTeamEvent) {
+        return false;
+      }
+    }
+
     const matchCategory = activeCategory === 'all' || e.category === activeCategory;
     const matchTherapist = selectedTherapist === 'todos' || e.therapistId === selectedTherapist;
 
@@ -428,6 +467,19 @@ export default function Dashboard() {
     acc[t.id] = t.technique ? `${t.name} (${t.technique})` : t.name;
     return acc;
   }, {});
+
+  // TELA DE LOGIN OBRIGATÓRIA: SE NÃO HOUVER USUÁRIO LOGADO COM SENHA
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        therapists={therapists}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          showNotification(`Acesso autorizado! Bem-vindo(a), ${user.name}.`);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col">
@@ -457,33 +509,90 @@ export default function Dashboard() {
                 <h1 className="text-base font-bold text-slate-900 leading-none">Instituto RenovaSer</h1>
                 <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 font-semibold px-2 py-0.5 rounded-full border border-emerald-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Firebase Conectado
+                  Conectado
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">Agenda & Gestão Integrada</p>
             </div>
           </div>
 
+          {/* Dados do Usuário Logado & Ações do Cabeçalho */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Chip de Identificação do Usuário */}
+            <div className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#FAF9F6] border border-[#E8E6DF]">
+              <div className="w-7 h-7 rounded-lg bg-[#2E3C32] text-emerald-300 font-bold text-xs flex items-center justify-center">
+                {currentUser.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-800 leading-none max-w-[140px] truncate">
+                    {currentUser.name}
+                  </span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
+                    currentUser.role === 'admin'
+                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  }`}>
+                    {currentUser.role === 'admin' ? 'Admin' : 'Terapeuta'}
+                  </span>
+                </div>
+                {currentUser.technique && (
+                  <span className="text-[10px] text-emerald-700 font-medium block leading-tight">
+                    {currentUser.technique}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Botão Alterar Senha */}
+            <button
+              type="button"
+              onClick={() => setShowChangePasswordModal(true)}
+              title="Alterar minha senha individual"
+              className="flex items-center gap-1.5 p-2 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+              <span className="hidden xl:inline text-[11px] font-medium">Alterar Senha</span>
+            </button>
+
+            {/* Botão Sair / Logout */}
+            <button
+              type="button"
+              onClick={() => {
+                logoutSession();
+                setCurrentUser(null);
+                showNotification('Sessão encerrada com sucesso.');
+              }}
+              title="Sair do Sistema"
+              className="flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </button>
+
             <button
               onClick={scrollToSummary}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200 shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
             >
               <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span className="hidden sm:inline">Resumo de Atendimentos</span>
-              <span className="sm:hidden">Resumo</span>
+              <span className="hidden lg:inline">Resumo</span>
             </button>
-            <button 
-              onClick={() => setShowNewUserModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
-            >
-              <UserPlus className="w-4 h-4 text-slate-600" />
-              <span className="hidden sm:inline">Cadastrar Utilizador</span>
-              <span className="sm:hidden">Utilizador</span>
-            </button>
+
+            {/* Botão de Cadastrar Utilizador: Exclusivo para Administradores */}
+            {currentUser.role === 'admin' && (
+              <button 
+                onClick={() => setShowNewUserModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 text-slate-600" />
+                <span className="hidden sm:inline">Cadastrar Utilizador</span>
+                <span className="sm:hidden">Utilizador</span>
+              </button>
+            )}
+
             <button 
               onClick={() => openNewEventAt()}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all"
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Novo Agendamento</span>
@@ -566,24 +675,32 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Seleção de Profissional / Admin */}
+            {/* Seleção de Profissional / Admin com RBAC */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
-                  <Filter className="w-3.5 h-3.5" /> Responsável:
+                  <Filter className="w-3.5 h-3.5" /> Agenda de:
                 </span>
-                <select
-                  value={selectedTherapist}
-                  onChange={(e) => setSelectedTherapist(e.target.value)}
-                  className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="todos">Todos os Profissionais / Admins ({therapists.length})</option>
-                  {therapists.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} {t.technique ? `(${t.technique})` : `(${t.role === 'admin' ? 'Admin' : 'Terapeuta'})`}
-                    </option>
-                  ))}
-                </select>
+                {currentUser.role === 'terapeuta' ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-medium">
+                    <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                    <span><strong>{currentUser.name}</strong> {currentUser.technique ? `(${currentUser.technique})` : ''}</span>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded font-semibold ml-1">Sua Agenda</span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedTherapist}
+                    onChange={(e) => setSelectedTherapist(e.target.value)}
+                    className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="todos">Todos os Profissionais / Admins ({therapists.length})</option>
+                    {therapists.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} {t.technique ? `(${t.technique})` : `(${t.role === 'admin' ? 'Admin' : 'Terapeuta'})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="text-xs text-slate-500">
@@ -814,12 +931,14 @@ export default function Dashboard() {
                 <Users className="w-4 h-4 text-slate-500" />
                 <h4 className="text-xs font-bold text-slate-800">Equipe & Admins ({therapists.length})</h4>
               </div>
-              <button
-                onClick={() => setShowNewUserModal(true)}
-                className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold"
-              >
-                + Adicionar
-              </button>
+              {currentUser.role === 'admin' && (
+                <button
+                  onClick={() => setShowNewUserModal(true)}
+                  className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold cursor-pointer"
+                >
+                  + Adicionar
+                </button>
+              )}
             </div>
 
             <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -852,8 +971,16 @@ export default function Dashboard() {
       {/* SEÇÃO: RESUMO DE ATENDIMENTOS DA SEMANA (GRÁFICO RECHARTS) */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
         <WeeklyAttendanceSummary
-          events={events}
-          therapists={therapists}
+          events={currentUser.role === 'terapeuta' ? filteredEvents : events}
+          therapists={
+            currentUser.role === 'terapeuta'
+              ? therapists.filter(
+                  (t) =>
+                    t.id === currentUser.id ||
+                    t.email.toLowerCase() === currentUser.email.toLowerCase()
+                )
+              : therapists
+          }
           onSelectCategory={(cat) => {
             setActiveCategory(cat);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -870,6 +997,7 @@ export default function Dashboard() {
         onClose={() => setSelectedEventForDetails(null)}
         onDelete={handleDeleteEvent}
         therapists={therapists}
+        currentUser={currentUser}
       />
 
       {/* MODAL: NOVO AGENDAMENTO COM WHATSAPP / E-MAIL OBRIGATÓRIOS PARA NOTIFICAÇÃO */}
@@ -881,7 +1009,7 @@ export default function Dashboard() {
                 <h3 className="font-bold text-slate-900 text-sm">Criar Novo Agendamento</h3>
                 <p className="text-[11px] text-slate-500">Configure os dados do compromisso e a notificação do cliente</p>
               </div>
-              <button onClick={() => setShowNewEventModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowNewEventModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -915,17 +1043,24 @@ export default function Dashboard() {
 
                 <div>
                   <label className="font-medium text-slate-700 block mb-1">Responsável / Terapeuta</label>
-                  <select
-                    value={newEvent.therapistId}
-                    onChange={(e) => setNewEvent({ ...newEvent, therapistId: e.target.value })}
-                    className="w-full p-2 bg-slate-50 border rounded-lg"
-                  >
-                    {therapists.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} {t.technique ? `— ${t.technique}` : `(${t.role === 'admin' ? 'Admin' : 'Terapeuta'})`}
-                      </option>
-                    ))}
-                  </select>
+                  {currentUser.role === 'terapeuta' ? (
+                    <div className="w-full p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 font-medium flex items-center justify-between">
+                      <span className="truncate">{currentUser.name} {currentUser.technique ? `(${currentUser.technique})` : ''}</span>
+                      <span className="text-[10px] bg-emerald-200/80 text-emerald-800 px-1.5 py-0.5 rounded font-semibold shrink-0 ml-1">Sua Agenda</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={newEvent.therapistId}
+                      onChange={(e) => setNewEvent({ ...newEvent, therapistId: e.target.value })}
+                      className="w-full p-2 bg-slate-50 border rounded-lg cursor-pointer"
+                    >
+                      {therapists.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} {t.technique ? `— ${t.technique}` : `(${t.role === 'admin' ? 'Admin' : 'Terapeuta'})`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
@@ -1106,19 +1241,35 @@ export default function Dashboard() {
                   <option value="admin">Administrador</option>
                 </select>
               </div>
+              <div>
+                <label className="font-medium text-slate-700 block mb-1">
+                  Senha Inicial de Acesso
+                </label>
+                <input 
+                  type="text" 
+                  required 
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  placeholder="Ex: renovaser123" 
+                  className="w-full p-2 bg-slate-50 border rounded-lg focus:outline-none focus:border-emerald-500 font-mono text-xs" 
+                />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  O profissional poderá alterar a senha ao realizar login.
+                </p>
+              </div>
               <div className="pt-3 flex justify-end gap-2">
                 <button 
                   type="button" 
                   disabled={isSubmitting}
                   onClick={() => setShowNewUserModal(false)} 
-                  className="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100"
+                  className="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
                   disabled={isSubmitting}
-                  className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg flex items-center gap-1.5"
+                  className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg flex items-center gap-1.5 cursor-pointer"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Cadastrar Utilizador
@@ -1127,6 +1278,19 @@ export default function Dashboard() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* MODAL: ALTERAR SENHA DO USUÁRIO ATUAL */}
+      {currentUser && (
+        <ChangePasswordModal
+          isOpen={showChangePasswordModal}
+          onClose={() => setShowChangePasswordModal(false)}
+          currentUser={currentUser}
+          onPasswordChanged={(updatedUser) => {
+            setCurrentUser(updatedUser);
+            showNotification('Senha atualizada com sucesso!');
+          }}
+        />
       )}
 
     </div>

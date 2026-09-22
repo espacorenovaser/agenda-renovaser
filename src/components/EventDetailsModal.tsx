@@ -20,14 +20,22 @@ interface EventDetailsModalProps {
   onClose: () => void;
   onDelete: (id: string, title: string) => void;
   therapists: TherapistUser[];
+  currentUser?: TherapistUser | null;
 }
 
-export function EventDetailsModal({ event, onClose, onDelete, therapists }: EventDetailsModalProps) {
+export function EventDetailsModal({ event, onClose, onDelete, therapists, currentUser }: EventDetailsModalProps) {
   if (!event) return null;
 
   const therapist = therapists.find((t) => t.id === event.therapistId);
   const responsibleName = therapist ? therapist.name : 'Equipe RenovaSer';
   const therapistEmail = therapist ? therapist.email : '';
+
+  // Permissão de exclusão: Admin pode tudo, Terapeuta só o que lhe diz respeito
+  const canDelete =
+    !currentUser ||
+    currentUser.role === 'admin' ||
+    event.therapistId === currentUser.id ||
+    (therapist && therapist.email.toLowerCase() === currentUser.email.toLowerCase());
 
   // Preparar link de WhatsApp
   const cleanPhone = (event.clientWhatsApp || '').replace(/\D/g, '');
@@ -173,19 +181,25 @@ export function EventDetailsModal({ event, onClose, onDelete, therapists }: Even
 
         {/* Rodapé e Ações */}
         <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-          <button
-            onClick={() => {
-              onDelete(event.id, event.title);
-              onClose();
-            }}
-            className="flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-lg transition-colors font-medium"
-          >
-            <Trash2 className="w-4 h-4" /> Excluir Compromisso
-          </button>
+          {canDelete ? (
+            <button
+              onClick={() => {
+                onDelete(event.id, event.title);
+                onClose();
+              }}
+              className="flex items-center gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-lg transition-colors font-medium cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" /> Excluir Compromisso
+            </button>
+          ) : (
+            <span className="text-[11px] text-slate-400 italic">
+              Compromisso institucional (somente leitura)
+            </span>
+          )}
 
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg transition-colors"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg transition-colors cursor-pointer"
           >
             Fechar
           </button>
