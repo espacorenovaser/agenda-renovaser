@@ -12,9 +12,10 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with auto-detect long polling so it operates reliably in web sandboxes & iframes
+// Initialize Firestore with force long polling and ignore undefined properties for maximum sandbox/iframe reliability
 export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
+  experimentalForceLongPolling: true,
+  ignoreUndefinedProperties: true,
 });
 export const auth = getAuth(app);
 

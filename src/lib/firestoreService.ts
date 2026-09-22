@@ -147,15 +147,18 @@ export function subscribeToEvents(
  */
 export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Promise<string> {
   const path = EVENTS_COLLECTION;
+  const eventId = event.id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const eventDoc = doc(db, EVENTS_COLLECTION, eventId);
+  const dataToSave = {
+    ...event,
+    id: eventId,
+    createdAt: event.createdAt || new Date().toISOString(),
+  };
+
   try {
-    const eventId = event.id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const eventDoc = doc(db, EVENTS_COLLECTION, eventId);
-    const dataToSave = {
-      ...event,
-      id: eventId,
-      createdAt: event.createdAt || new Date().toISOString(),
-    };
-    await setDoc(eventDoc, dataToSave, { merge: true });
+    const writePromise = setDoc(eventDoc, dataToSave, { merge: true });
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 4000));
+    await Promise.race([writePromise, timeoutPromise]);
     return eventId;
   } catch (err: any) {
     const isPerm =
@@ -234,6 +237,7 @@ export function subscribeToTherapists(
             name: data.name,
             email: data.email,
             role: data.role === 'admin' ? 'admin' : 'terapeuta',
+            technique: data.technique || '',
             createdAt: data.createdAt,
           });
         }
@@ -261,15 +265,23 @@ export function subscribeToTherapists(
  */
 export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?: string }): Promise<string> {
   const path = USERS_COLLECTION;
+  const userId = therapist.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const userDoc = doc(db, USERS_COLLECTION, userId);
+  const dataToSave: Record<string, any> = {
+    id: userId,
+    name: therapist.name,
+    email: therapist.email,
+    role: therapist.role || 'terapeuta',
+    createdAt: therapist.createdAt || new Date().toISOString(),
+  };
+  if (therapist.technique) {
+    dataToSave.technique = therapist.technique;
+  }
+
   try {
-    const userId = therapist.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const userDoc = doc(db, USERS_COLLECTION, userId);
-    const dataToSave = {
-      ...therapist,
-      id: userId,
-      createdAt: therapist.createdAt || new Date().toISOString(),
-    };
-    await setDoc(userDoc, dataToSave, { merge: true });
+    const writePromise = setDoc(userDoc, dataToSave, { merge: true });
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 4000));
+    await Promise.race([writePromise, timeoutPromise]);
     return userId;
   } catch (err: any) {
     const isPerm =

@@ -239,19 +239,50 @@ export default function Dashboard() {
     if (!newUser.name.trim() || !newUser.email.trim()) return;
 
     setIsSubmitting(true);
+    const candidateName = newUser.name.trim();
+    const candidateEmail = newUser.email.trim();
+    const candidateRole = newUser.role;
+    const candidateTechnique = newUser.technique.trim();
+
     try {
+      const generatedId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      
+      // Atualização otimista imediata para que o usuário não fique esperando
+      setTherapists((prev) => {
+        const exists = prev.some((t) => t.email.toLowerCase() === candidateEmail.toLowerCase());
+        if (exists) {
+          return prev.map((t) => t.email.toLowerCase() === candidateEmail.toLowerCase()
+            ? { ...t, name: candidateName, role: candidateRole, technique: candidateTechnique }
+            : t
+          );
+        }
+        return [
+          ...prev,
+          {
+            id: generatedId,
+            name: candidateName,
+            email: candidateEmail,
+            role: candidateRole,
+            technique: candidateTechnique,
+            createdAt: new Date().toISOString(),
+          }
+        ];
+      });
+
       await saveTherapist({
-        name: newUser.name.trim(),
-        email: newUser.email.trim(),
-        role: newUser.role,
-        technique: newUser.technique.trim() || undefined,
+        id: generatedId,
+        name: candidateName,
+        email: candidateEmail,
+        role: candidateRole,
+        technique: candidateTechnique || undefined,
         createdAt: new Date().toISOString()
       });
 
       setShowNewUserModal(false);
       setNewUser({ name: '', email: '', role: 'terapeuta', technique: '' });
-      showNotification(`Profissional "${newUser.name}" cadastrado com sucesso!`);
+      showNotification(`Profissional "${candidateName}" cadastrado com sucesso!`);
     } catch (err: any) {
+      console.error('Erro ao cadastrar profissional:', err);
       showNotification('Erro ao cadastrar profissional: ' + (err.message || err), 'error');
     } finally {
       setIsSubmitting(false);
