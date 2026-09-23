@@ -74,13 +74,64 @@ const EVENTS_COLLECTION = 'events';
 const USERS_COLLECTION = 'users';
 
 const LOCAL_EVENTS_KEY = 'renovaser_cached_events_v2';
+const LOCAL_THERAPISTS_KEY = 'renovaser_cached_therapists_v2';
+
+/**
+ * Valida e sanitiza formatos de horário (ex: "14:00 - 15:00").
+ * Repara automaticamente valores inválidos como "26:00 - 13:00" para horários reais legítimos.
+ */
+export function sanitizeEventTime(timeStr: string | undefined): string {
+  if (!timeStr || typeof timeStr !== 'string') return '14:00 - 15:00';
+  const parts = timeStr.split('-');
+  const startPart = parts[0]?.trim() || '';
+  const endPart = parts[1]?.trim() || '';
+
+  const [sHStr, sMStr] = startPart.split(':');
+  let sH = parseInt(sHStr, 10);
+  let sM = parseInt(sMStr, 10) || 0;
+
+  const [eHStr, eMStr] = endPart ? endPart.split(':') : ['', ''];
+  let eH = parseInt(eHStr, 10);
+  let eM = parseInt(eMStr, 10) || 0;
+
+  // Se a hora inicial for inválida (ex: 26:00 como no caso do bug de dia/hora)
+  if (isNaN(sH) || sH < 0 || sH >= 24) {
+    if (!isNaN(eH) && eH >= 0 && eH < 24) {
+      // Se a hora final era legítima (ex: 13:00), converte para o horário de início desejado!
+      sH = eH;
+      sM = eM;
+      eH = sH + 1 < 24 ? sH + 1 : 23;
+    } else {
+      sH = 14;
+      sM = 0;
+      eH = 15;
+      eM = 0;
+    }
+  }
+
+  if (sM < 0 || sM >= 60) sM = 0;
+
+  // Se a hora final for inválida ou menor/igual à inicial
+  if (isNaN(eH) || eH < 0 || eH >= 24 || eH <= sH) {
+    eH = sH + 1 < 24 ? sH + 1 : 23;
+    eM = sM;
+  }
+  if (eM < 0 || eM >= 60) eM = 0;
+
+  return `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')} - ${String(eH).padStart(2, '0')}:${String(eM).padStart(2, '0')}`;
+}
 
 export function getCachedLocalEvents(): Evento[] {
   try {
     const raw = localStorage.getItem(LOCAL_EVENTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((e) => ({
+          ...e,
+          time: sanitizeEventTime(e.time)
+        }));
+      }
     }
   } catch (e) {
     console.warn('Erro ao ler cache local de eventos:', e);
@@ -90,9 +141,34 @@ export function getCachedLocalEvents(): Evento[] {
 
 export function setCachedLocalEvents(events: Evento[]): void {
   try {
-    localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(events));
+    const cleaned = events.map((e) => ({
+      ...e,
+      time: sanitizeEventTime(e.time)
+    }));
+    localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(cleaned));
   } catch (e) {
     console.warn('Erro ao gravar cache local de eventos:', e);
+  }
+}
+
+export function getCachedLocalTherapists(): TherapistUser[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_THERAPISTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('Erro ao ler cache local de terapeutas:', e);
+  }
+  return DEFAULT_THERAPISTS;
+}
+
+export function setCachedLocalTherapists(therapists: TherapistUser[]): void {
+  try {
+    localStorage.setItem(LOCAL_THERAPISTS_KEY, JSON.stringify(therapists));
+  } catch (e) {
+    console.warn('Erro ao gravar cache local de terapeutas:', e);
   }
 }
 
@@ -123,7 +199,10 @@ export function subscribeToEvents(
         try {
           const eventsToSeed = localInitial.length > 0 ? localInitial : DEFAULT_EVENTS;
           for (const ev of eventsToSeed) {
-            await setDoc(doc(db, EVENTS_COLLECTION, ev.id), ev);
+            await setDoc(doc(db, EVENTS_COLLECTION, ev.id), {
+              ...ev,
+              time: sanitizeEventTime(ev.time)
+            });
           }
           callback(eventsToSeed);
           return;
@@ -135,11 +214,19 @@ export function subscribeToEvents(
       const items: Evento[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
+        const rawTime = data.time || '14:00 - 15:00';
+        const cleanTime = sanitizeEventTime(rawTime);
+
+        // Se o horário estava com hora inválida (ex: 26:00), repara imediatamente no Firestore
+        if (rawTime !== cleanTime) {
+          setDoc(doc(db, EVENTS_COLLECTION, d.id), { time: cleanTime }, { merge: true }).catch(() => {});
+        }
+
         items.push({
           id: d.id,
           title: data.title || '(Sem título)',
           category: data.category || 'atendimento',
-          time: data.time || '14:00 - 15:00',
+          time: cleanTime,
           date: data.date || new Date().toISOString().split('T')[0],
           location: data.location || 'Sala do Instituto RenovaSer',
           type: data.type || 'presencial',
@@ -193,9 +280,11 @@ export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Pr
   const path = EVENTS_COLLECTION;
   const eventId = event.id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const eventDoc = doc(db, EVENTS_COLLECTION, eventId);
+  const cleanTime = sanitizeEventTime(event.time);
   const dataToSave: Evento = {
     ...event,
     id: eventId,
+    time: cleanTime,
     createdAt: event.createdAt || new Date().toISOString(),
   };
 
@@ -230,7 +319,6 @@ export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Pr
       handleFirestoreError(err, OperationType.WRITE, path);
     }
     console.error('Erro ao salvar evento no Firestore (mantido localmente):', err);
-    // Não relança erro fatal se o cache local já salvou com sucesso
     return eventId;
   }
 }
@@ -276,6 +364,12 @@ export function subscribeToTherapists(
   const path = USERS_COLLECTION;
   const colRef = collection(db, USERS_COLLECTION);
 
+  // Fornece imediatamente os terapeutas em cache
+  const localInitial = getCachedLocalTherapists();
+  if (localInitial.length > 0) {
+    callback(localInitial);
+  }
+
   let hasSeeded = false;
 
   return onSnapshot(
@@ -285,13 +379,14 @@ export function subscribeToTherapists(
         hasSeeded = true;
         // Inicializar com a equipe padrão caso não haja registros
         try {
-          for (const t of DEFAULT_THERAPISTS) {
+          const toSeed = localInitial.length > 0 ? localInitial : DEFAULT_THERAPISTS;
+          for (const t of toSeed) {
             await setDoc(doc(db, USERS_COLLECTION, t.id), {
               ...t,
               createdAt: new Date().toISOString(),
             });
           }
-          callback(DEFAULT_THERAPISTS);
+          callback(toSeed);
           return;
         } catch (seedErr) {
           console.warn('Erro ao inicializar equipe padrão no Firestore:', seedErr);
@@ -314,7 +409,9 @@ export function subscribeToTherapists(
         }
       });
 
-      callback(items.length > 0 ? items : DEFAULT_THERAPISTS);
+      const finalTherapists = items.length > 0 ? items : localInitial;
+      setCachedLocalTherapists(finalTherapists);
+      callback(finalTherapists);
     },
     (error: any) => {
       const isPerm =
@@ -326,6 +423,8 @@ export function subscribeToTherapists(
         handleFirestoreError(error, OperationType.GET, path);
       }
       console.warn('Therapists subscription error (offline/transient):', error?.message || error);
+      const cached = getCachedLocalTherapists();
+      callback(cached);
       if (onError) onError(error);
     }
   );
@@ -338,16 +437,30 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
   const path = USERS_COLLECTION;
   const userId = therapist.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const userDoc = doc(db, USERS_COLLECTION, userId);
-  const dataToSave: Record<string, any> = {
+  const dataToSave: TherapistUser = {
     id: userId,
     name: therapist.name,
     email: therapist.email,
     role: therapist.role || 'terapeuta',
+    technique: therapist.technique || '',
     password: therapist.password || 'renovaser123',
     createdAt: therapist.createdAt || new Date().toISOString(),
   };
-  if (therapist.technique) {
-    dataToSave.technique = therapist.technique;
+
+  // Atualiza cache local de terapeutas
+  try {
+    const cached = getCachedLocalTherapists();
+    const idx = cached.findIndex((t) => t.id === userId || t.email.toLowerCase() === therapist.email.toLowerCase());
+    let updated: TherapistUser[];
+    if (idx >= 0) {
+      updated = [...cached];
+      updated[idx] = dataToSave;
+    } else {
+      updated = [...cached, dataToSave];
+    }
+    setCachedLocalTherapists(updated);
+  } catch (cErr) {
+    console.warn('Erro ao atualizar cache de terapeutas:', cErr);
   }
 
   try {
@@ -364,8 +477,8 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
     if (isPerm) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
-    console.error('Erro ao salvar terapeuta/usuário no Firestore:', err);
-    throw err;
+    console.error('Erro ao salvar terapeuta no Firestore:', err);
+    return userId;
   }
 }
 

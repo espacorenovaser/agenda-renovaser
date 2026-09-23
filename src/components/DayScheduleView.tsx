@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { Evento, TherapistUser } from '../types';
 import { getRoomById } from '../lib/roomService';
+import { sanitizeEventTime } from '../lib/firestoreService';
 
 interface DayScheduleViewProps {
   events: Evento[];
@@ -48,20 +49,26 @@ export function DayScheduleView({
 
   // Extrai o horário inicial e final de uma string tipo "09:30 - 10:30" ou "14:00"
   const parseEventTimes = (timeStr: string) => {
-    const parts = timeStr.split('-');
+    const cleanTime = sanitizeEventTime(timeStr);
+    const parts = cleanTime.split('-');
     const startStr = parts[0]?.trim() || '';
     const endStr = parts[1]?.trim() || '';
 
-    const [startH, startM] = startStr.split(':').map((v) => parseInt(v, 10));
-    const [endH, endM] = endStr ? endStr.split(':').map((v) => parseInt(v, 10)) : [NaN, NaN];
+    let [startH, startM] = startStr.split(':').map((v) => parseInt(v, 10));
+    let [endH, endM] = endStr ? endStr.split(':').map((v) => parseInt(v, 10)) : [NaN, NaN];
+
+    if (isNaN(startH) || startH < 0 || startH >= 24) startH = 14;
+    if (isNaN(startM) || startM < 0 || startM >= 60) startM = 0;
+    if (isNaN(endH) || endH < 0 || endH >= 24) endH = startH + 1 < 24 ? startH + 1 : 23;
+    if (isNaN(endM) || endM < 0 || endM >= 60) endM = 0;
 
     return {
-      startHour: isNaN(startH) ? null : startH,
-      startMin: isNaN(startM) ? 0 : startM,
-      endHour: isNaN(endH) ? null : endH,
-      endMin: isNaN(endM) ? 0 : endM,
-      rawStart: startStr,
-      rawEnd: endStr
+      startHour: startH,
+      startMin: startM,
+      endHour: endH,
+      endMin: endM,
+      rawStart: `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`,
+      rawEnd: `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`
     };
   };
 
