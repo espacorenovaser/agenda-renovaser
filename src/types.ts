@@ -45,7 +45,7 @@ export interface TherapistUser {
   name: string;
   email: string;
   role: 'admin' | 'terapeuta';
-  technique?: string; // ex: Reiki, Tarô, Florais, etc.
+  technique?: string;
   createdAt?: string;
 }
 
