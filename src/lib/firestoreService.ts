@@ -121,16 +121,65 @@ export function sanitizeEventTime(timeStr: string | undefined): string {
   return `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')} - ${String(eH).padStart(2, '0')}:${String(eM).padStart(2, '0')}`;
 }
 
+/**
+ * Corrige automaticamente eventos corrompidos por bugs de parsing anteriores (ex: título "line" ou "06:00 - 13:00")
+ */
+export function repairCorruptedEvent(e: Evento): { event: Evento; changed: boolean } {
+  let changed = false;
+  let title = e.title || '(Sem título)';
+  let category = e.category || 'atendimento';
+  let type = e.type || 'presencial';
+  let location = e.location || 'Sala do Instituto RenovaSer';
+  let roomId = e.roomId;
+  let roomName = e.roomName;
+  let time = sanitizeEventTime(e.time);
+
+  if (time !== e.time) {
+    changed = true;
+  }
+
+  // Se o título for 'line' ou 'line.' (gerado pelo split indevido em palavras com hífen como 'on-line')
+  if (title.trim().toLowerCase() === 'line' || title.trim().toLowerCase() === 'line.') {
+    title = 'Reunião com a Equipe';
+    category = 'reuniao';
+    type = 'online';
+    location = 'Online - Google Meet';
+    roomId = undefined;
+    roomName = undefined;
+    if (time === '06:00 - 13:00' || time.startsWith('06:')) {
+      time = '13:00 - 14:00';
+    }
+    changed = true;
+  }
+
+  // Se o horário for 06:00 - 13:00 (vazamento do 26 do dia 25.09.26 antes de "às 13 horas")
+  if (time === '06:00 - 13:00') {
+    time = '13:00 - 14:00';
+    changed = true;
+  }
+
+  return {
+    event: {
+      ...e,
+      title,
+      category,
+      type,
+      location,
+      roomId,
+      roomName,
+      time
+    },
+    changed
+  };
+}
+
 export function getCachedLocalEvents(): Evento[] {
   try {
     const raw = localStorage.getItem(LOCAL_EVENTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((e) => ({
-          ...e,
-          time: sanitizeEventTime(e.time)
-        }));
+        return parsed.map((e) => repairCorruptedEvent(e).event);
       }
     }
   } catch (e) {
@@ -141,10 +190,7 @@ export function getCachedLocalEvents(): Evento[] {
 
 export function setCachedLocalEvents(events: Evento[]): void {
   try {
-    const cleaned = events.map((e) => ({
-      ...e,
-      time: sanitizeEventTime(e.time)
-    }));
+    const cleaned = events.map((e) => repairCorruptedEvent(e).event);
     localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(cleaned));
   } catch (e) {
     console.warn('Erro ao gravar cache local de eventos:', e);
@@ -214,19 +260,11 @@ export function subscribeToEvents(
       const items: Evento[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        const rawTime = data.time || '14:00 - 15:00';
-        const cleanTime = sanitizeEventTime(rawTime);
-
-        // Se o horário estava com hora inválida (ex: 26:00), repara imediatamente no Firestore
-        if (rawTime !== cleanTime) {
-          setDoc(doc(db, EVENTS_COLLECTION, d.id), { time: cleanTime }, { merge: true }).catch(() => {});
-        }
-
-        items.push({
+        const rawEvent: Evento = {
           id: d.id,
           title: data.title || '(Sem título)',
           category: data.category || 'atendimento',
-          time: cleanTime,
+          time: data.time || '14:00 - 15:00',
           date: data.date || new Date().toISOString().split('T')[0],
           location: data.location || 'Sala do Instituto RenovaSer',
           type: data.type || 'presencial',
@@ -246,7 +284,24 @@ export function subscribeToEvents(
           googleEventId: data.googleEventId,
           googleHtmlLink: data.googleHtmlLink,
           syncedWithGoogle: data.syncedWithGoogle,
-        });
+        };
+
+        const { event: cleanEvent, changed } = repairCorruptedEvent(rawEvent);
+
+        // Se o evento precisou de reparo (ex: horário 26:00, 06:00-13:00 ou título 'line'), salva correção no Firestore
+        if (changed) {
+          setDoc(doc(db, EVENTS_COLLECTION, d.id), {
+            title: cleanEvent.title,
+            category: cleanEvent.category,
+            type: cleanEvent.type,
+            location: cleanEvent.location,
+            time: cleanEvent.time,
+            roomId: cleanEvent.roomId ?? null,
+            roomName: cleanEvent.roomName ?? null,
+          }, { merge: true }).catch(() => {});
+        }
+
+        items.push(cleanEvent);
       });
 
       // Ordenar por data e horário
@@ -280,13 +335,12 @@ export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Pr
   const path = EVENTS_COLLECTION;
   const eventId = event.id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const eventDoc = doc(db, EVENTS_COLLECTION, eventId);
-  const cleanTime = sanitizeEventTime(event.time);
-  const dataToSave: Evento = {
+  const rawData: Evento = {
     ...event,
     id: eventId,
-    time: cleanTime,
     createdAt: event.createdAt || new Date().toISOString(),
   };
+  const dataToSave = repairCorruptedEvent(rawData).event;
 
   // Atualizar cache local imediatamente
   try {

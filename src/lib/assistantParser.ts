@@ -21,7 +21,7 @@ export interface AssistantParseResult {
 }
 
 /**
- * Normaliza e extrai data do texto (suporta DD/MM/AAAA, DD/MM, "dia 26", "dia 26 de setembro", "amanhã", "hoje", etc.)
+ * Normaliza e extrai data do texto (suporta DD/MM/AAAA, DD.MM.AAAA, DD.MM.AA, "dia 25.09.26", "dia 26", "dia 26 de setembro", "amanhã", "hoje", etc.)
  */
 export function extractDateFromText(text: string): string {
   const lower = text.toLowerCase();
@@ -29,14 +29,14 @@ export function extractDateFromText(text: string): string {
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth() + 1; // 1-12
 
-  // 1. DD/MM/AAAA ou DD/MM (ex: 26/09 ou 26/09/2026)
-  const slashMatch = lower.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
-  if (slashMatch) {
-    const day = parseInt(slashMatch[1], 10);
-    const month = parseInt(slashMatch[2], 10);
+  // 1. DD/MM/AAAA ou DD.MM.AAAA ou DD-MM-AAAA ou DD.MM.AA (ex: 25.09.26, 26/09/2026, 25-09-2026)
+  const numDateMatch = lower.match(/\b(\d{1,2})[\/\.\-](\d{1,2})(?:[\/\.\-](\d{2,4}))?\b/);
+  if (numDateMatch) {
+    const day = parseInt(numDateMatch[1], 10);
+    const month = parseInt(numDateMatch[2], 10);
     let year = currentYear;
-    if (slashMatch[3]) {
-      year = slashMatch[3].length === 2 ? parseInt(`20${slashMatch[3]}`, 10) : parseInt(slashMatch[3], 10);
+    if (numDateMatch[3]) {
+      year = numDateMatch[3].length === 2 ? parseInt(`20${numDateMatch[3]}`, 10) : parseInt(numDateMatch[3], 10);
     }
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
       return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -92,22 +92,22 @@ export function extractDateFromText(text: string): string {
 
 /**
  * Extrai intervalo de horário do texto garantindo que horas estejam estritamente entre 00 e 23,
- * e impedindo que números de datas (ex: dia 26) sejam confundidos com horários.
+ * impedindo que números de datas (ex: 25.09.26, dia 26) sejam confundidos com horários.
  */
 export function extractTimeRangeFromText(text: string): { timeRange: string; hasExplicitTime: boolean } {
   const lower = text.toLowerCase();
 
-  // Limpa números de datas para que dia 26, 26/09, 2026 NUNCA sejam capturados como horas
+  // Limpa números de datas (com /, ., ou -) para que dia 25.09.26, 26/09, 2026 NUNCA sejam capturados como horas
   const cleaned = lower
-    .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ' ')
+    .replace(/\b\d{1,2}[\/\.\-]\d{1,2}(?:[\/\.\-]\d{2,4})?\b/g, ' ')
     .replace(/(?:dia|data)\s*\d{1,2}(?:\s+de\s+[a-zç]+)?(?:\s+de\s+\d{4})?/g, ' ')
-    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
+    .replace(/\b\d{4}[\/\.\-]\d{2}[\/\.\-]\d{2}\b/g, ' ')
     .replace(/\b(202[4-9]|203\d)\b/g, ' ')
     .replace(/\b(amanhã|amanha|hoje|ontem)\b/g, ' ');
 
   // Caso 1: Intervalo explícito "das 10h às 16h", "10:00 - 16:00", "das 14 as 18 horas"
   const rangeMatch = cleaned.match(
-    /(?:das?|de)?\s*([01]?\d|2[0-3])(?:[h:]([0-5]\d)?)?\s*(?:às|as|a|-|até)\s*([01]?\d|2[0-3])(?:[h:]([0-5]\d)?)?\s*(?:h|horas?)?/
+    /\b(?:das?|de)?\s*([01]?\d|2[0-3])(?:[h:]([0-5]\d)?)?\s*(?:às|as|a|-|até)\s*([01]?\d|2[0-3])(?:[h:]([0-5]\d)?)?\s*(?:h|horas?)?\b/
   );
 
   if (rangeMatch && rangeMatch[1] && rangeMatch[3]) {
@@ -123,7 +123,6 @@ export function extractTimeRangeFromText(text: string): { timeRange: string; has
           hasExplicitTime: true
         };
       } else {
-        // Horário de início informado com fim menor ou igual: gera 1 hora de atendimento
         const nextH = sH + 1 < 24 ? sH + 1 : 23;
         return {
           timeRange: `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')} - ${String(nextH).padStart(2, '0')}:${String(sM).padStart(2, '0')}`,
@@ -133,9 +132,9 @@ export function extractTimeRangeFromText(text: string): { timeRange: string; has
     }
   }
 
-  // Caso 2: Hora única explícita "às 13h", "às 13:00", "13h", "19h30", "14:30"
-  // 2a. Prefixo "às" ou "as"
-  const asMatch = cleaned.match(/(?:às|as|para\s+as|para\s+às|para\s+a)\s*([01]?\d|2[0-3])(?:[h:]([0-5]\d)?)?/);
+  // Caso 2: Hora única explícita "às 13 horas", "às 13h", "às 13:00", "13h", "19h30", "14:30"
+  // 2a. Prefixo "às" ou "as" ou "para as"
+  const asMatch = cleaned.match(/(?:às|as|para\s+as|para\s+às|para\s+a)\s*([01]?\d|2[0-3])(?:[h:]([0-5]\d)?)?(?:\s*horas?)?\b/);
   if (asMatch && asMatch[1]) {
     const sH = parseInt(asMatch[1], 10);
     const sM = asMatch[2] ? parseInt(asMatch[2], 10) : 0;
@@ -162,7 +161,7 @@ export function extractTimeRangeFromText(text: string): { timeRange: string; has
     }
   }
 
-  // Caso 3: "14 horas"
+  // Caso 3: "14 horas" ou "13 horas"
   const horasMatch = cleaned.match(/\b([01]?\d|2[0-3])\s*horas?\b/);
   if (horasMatch && horasMatch[1]) {
     const sH = parseInt(horasMatch[1], 10);
@@ -332,7 +331,21 @@ export function parseAssistantCommand(
   }
 
   // --- MODO AGENDAMENTO INDIVIDUAL (1 SALA) ---
-  const isOnline = lower.includes('online') || lower.includes('meet') || lower.includes('zoom');
+  const isOnline =
+    lower.includes('online') ||
+    lower.includes('on-line') ||
+    lower.includes('on line') ||
+    lower.includes('meet') ||
+    lower.includes('google meet') ||
+    lower.includes('zoom') ||
+    lower.includes('remoto') ||
+    lower.includes('remota') ||
+    lower.includes('vídeo') ||
+    lower.includes('video') ||
+    lower.includes('videoconferência') ||
+    lower.includes('videoconferencia') ||
+    lower.includes('virtual');
+
   const isReuniao = lower.includes('reuni') || lower.includes('equipe');
 
   let assignedRoomId: RoomId | undefined = undefined;
@@ -351,18 +364,30 @@ export function parseAssistantCommand(
   const roomLabel = roomObj ? roomObj.label : 'Sala 1 • Harmonia';
 
   let titleVal = isReuniao
-    ? 'Reunião com a Equipe de Terapeutas'
+    ? 'Reunião com a Equipe'
     : 'Atendimento Terapêutico';
 
   if (themePrefix) {
     titleVal = themePrefix;
+  } else if (lower.includes('supervisão') || lower.includes('supervisao')) {
+    titleVal = 'Supervisão Clínica';
   } else if (lower.includes('com dr.') || lower.includes('com dra.')) {
     titleVal = 'Atendimento Clínico';
-  } else if (text.includes('-')) {
-    const parts = text.split('-');
-    const candidate = parts.find((p) => p.trim().length > 3 && !p.toLowerCase().includes('sala'));
-    if (candidate) {
-      titleVal = candidate.trim();
+  } else if (lower.includes('tarô') || lower.includes('taro')) {
+    titleVal = 'Atendimento de Tarô';
+  } else if (lower.includes('barra de access') || lower.includes('barras de access')) {
+    titleVal = 'Sessão de Barras de Access';
+  } else if (lower.includes('constelação') || lower.includes('constelacao')) {
+    titleVal = 'Constelação Familiar';
+  } else if (lower.includes('psicoterapia')) {
+    titleVal = 'Sessão de Psicoterapia';
+  } else if (lower.includes('massagem') || lower.includes('massoterapia')) {
+    titleVal = 'Massoterapia';
+  } else {
+    // Procura título explícito entre aspas se o usuário colocou
+    const quotedMatch = text.match(/["'“]([^"'”]+)["'”]/);
+    if (quotedMatch && quotedMatch[1].trim().length > 2) {
+      titleVal = quotedMatch[1].trim();
     }
   }
 

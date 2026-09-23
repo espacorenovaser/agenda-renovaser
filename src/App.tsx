@@ -620,14 +620,19 @@ export default function Dashboard() {
           ]);
           showNotification(`${parsed.items.length} agendamentos registrados com sucesso!`);
         } else {
+          const isItemOnline = firstItem.type === 'online';
+          const msgText = isItemOnline
+            ? `Perfeito! Agendei a reunião online: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} (Modalidade: Online - Google Meet). Espaços físicos liberados.${gcalNotice}`
+            : `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!${gcalNotice}`;
+
           setChatMessages((prev) => [
             ...prev,
             {
               sender: 'assistant',
-              text: `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!${gcalNotice}`
+              text: msgText
             }
           ]);
-          showNotification('Compromisso registrado na agenda e sala reservada!');
+          showNotification(isItemOnline ? 'Reunião online registrada na agenda!' : 'Compromisso registrado na agenda e sala reservada!');
         }
       } catch (err: any) {
         setChatMessages((prev) => [
@@ -1149,7 +1154,7 @@ export default function Dashboard() {
         {/* Lateral: Assistente Integrado e Equipe */}
         <aside className="space-y-6">
           {/* Assistente Integrado */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col h-[560px]">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col h-[620px]">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -1197,11 +1202,11 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Área de Escrita Ampliada e Sem Sobreposição */}
+            {/* Área de Escrita Ampliada Confortável */}
             <div className="pt-2 border-t border-slate-100">
               <div className="bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all shadow-2xs flex flex-col">
                 <textarea
-                  rows={3}
+                  rows={4}
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1210,20 +1215,20 @@ export default function Dashboard() {
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Escreva aqui sua solicitação (ex: Agendar para 26/09 - Sábado do Cuidado, atendimento na Sala 2 às 15h)..."
-                  className="w-full px-3.5 pt-3 pb-2 text-xs sm:text-[13px] bg-transparent resize-y min-h-[76px] max-h-[180px] focus:outline-none text-slate-800 placeholder:text-slate-400 leading-relaxed block"
+                  placeholder="Escreva sua solicitação aqui com calma (ex: Agendar reunião para dia 25.09.26 às 13 horas com a equipe on-line)..."
+                  className="w-full px-3.5 pt-3 pb-2 text-xs sm:text-[13px] bg-transparent resize-y min-h-[105px] max-h-[220px] focus:outline-none text-slate-800 placeholder:text-slate-400 leading-relaxed block"
                 />
 
                 {/* Barra de Ações Fixada Abaixo do Campo de Texto (Nunca Cobre o Texto) */}
                 <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between gap-2 bg-slate-50/70 rounded-b-xl">
                   <span className="text-[10px] text-slate-400 select-none">
-                    <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Enter</kbd> envia • <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Shift+Enter</kbd> pula linha
+                    <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Enter</kbd> envia • <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Shift+Enter</kbd> quebra linha
                   </span>
                   <button 
                     type="button"
                     onClick={handleSendMessage}
                     disabled={!chatInput.trim()}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer shrink-0"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer shrink-0"
                   >
                     <span>Enviar</span>
                     <Send className="w-3.5 h-3.5" />
