@@ -25,6 +25,7 @@ export async function testConnection() {
     }
   }
 }
+
 // Run connection check non-blocking
 testConnection().catch(() => {});
 
@@ -72,7 +73,6 @@ export const DEFAULT_EVENTS: Evento[] = [
 
 const EVENTS_COLLECTION = 'events';
 const USERS_COLLECTION = 'users';
-
 const LOCAL_EVENTS_KEY = 'renovaser_cached_events_v2';
 const LOCAL_THERAPISTS_KEY = 'renovaser_cached_therapists_v2';
 
@@ -85,11 +85,9 @@ export function sanitizeEventTime(timeStr: string | undefined): string {
   const parts = timeStr.split('-');
   const startPart = parts[0]?.trim() || '';
   const endPart = parts[1]?.trim() || '';
-
   const [sHStr, sMStr] = startPart.split(':');
   let sH = parseInt(sHStr, 10);
   let sM = parseInt(sMStr, 10) || 0;
-
   const [eHStr, eMStr] = endPart ? endPart.split(':') : ['', ''];
   let eH = parseInt(eHStr, 10);
   let eM = parseInt(eMStr, 10) || 0;
@@ -108,7 +106,6 @@ export function sanitizeEventTime(timeStr: string | undefined): string {
       eM = 0;
     }
   }
-
   if (sM < 0 || sM >= 60) sM = 0;
 
   // Se a hora final for inválida ou menor/igual à inicial
@@ -133,7 +130,6 @@ export function repairCorruptedEvent(e: Evento): { event: Evento; changed: boole
   let roomId = e.roomId;
   let roomName = e.roomName;
   let time = sanitizeEventTime(e.time);
-
   if (time !== e.time) {
     changed = true;
   }
@@ -235,7 +231,6 @@ export function subscribeToEvents(
   }
 
   let hasSeeded = false;
-
   return onSnapshot(
     colRef,
     async (snapshot) => {
@@ -285,7 +280,6 @@ export function subscribeToEvents(
           googleHtmlLink: data.googleHtmlLink,
           syncedWithGoogle: data.syncedWithGoogle,
         };
-
         const { event: cleanEvent, changed } = repairCorruptedEvent(rawEvent);
 
         // Se o evento precisou de reparo (ex: horário 26:00, 06:00-13:00 ou título 'line'), salva correção no Firestore
@@ -300,7 +294,6 @@ export function subscribeToEvents(
             roomName: cleanEvent.roomName ?? null,
           }, { merge: true }).catch(() => {});
         }
-
         items.push(cleanEvent);
       });
 
@@ -315,7 +308,6 @@ export function subscribeToEvents(
         error?.code === 'permission-denied' ||
         error?.message?.includes('permission-denied') ||
         error?.message?.includes('Missing or insufficient permissions');
-
       if (isPerm) {
         handleFirestoreError(error, OperationType.GET, path);
       }
@@ -368,7 +360,6 @@ export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Pr
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -400,7 +391,6 @@ export async function deleteEvent(eventId: string): Promise<void> {
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
@@ -425,7 +415,6 @@ export function subscribeToTherapists(
   }
 
   let hasSeeded = false;
-
   return onSnapshot(
     colRef,
     async (snapshot) => {
@@ -472,7 +461,6 @@ export function subscribeToTherapists(
         error?.code === 'permission-denied' ||
         error?.message?.includes('permission-denied') ||
         error?.message?.includes('Missing or insufficient permissions');
-
       if (isPerm) {
         handleFirestoreError(error, OperationType.GET, path);
       }
@@ -527,7 +515,6 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -572,7 +559,6 @@ export async function deleteTherapist(therapistId: string): Promise<void> {
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
@@ -607,7 +593,6 @@ export async function syncUserProfile(user: { uid: string; displayName?: string 
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -640,7 +625,6 @@ export async function saveChatMessage(userId: string, message: Omit<ChatMessage,
     if (message.executedEvents && message.executedEvents.length > 0) {
       docData.executedEvents = message.executedEvents;
     }
-
     const docRef = await addDoc(colRef, docData);
     return docRef.id;
   } catch (err: any) {
@@ -648,7 +632,6 @@ export async function saveChatMessage(userId: string, message: Omit<ChatMessage,
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.CREATE, path);
     }
@@ -661,7 +644,6 @@ export function subscribeToMessages(userId: string, callback: (msgs: ChatMessage
   const path = `users/${userId}/chat_messages`;
   const colRef = collection(db, 'users', userId, 'chat_messages');
   const q = query(colRef, orderBy('createdAt', 'asc'), limit(50));
-
   return onSnapshot(
     q,
     (snapshot) => {
@@ -676,7 +658,6 @@ export function subscribeToMessages(userId: string, callback: (msgs: ChatMessage
         error?.code === 'permission-denied' ||
         error?.message?.includes('permission-denied') ||
         error?.message?.includes('Missing or insufficient permissions');
-
       if (isPerm) {
         handleFirestoreError(error, OperationType.GET, path);
       }
@@ -701,7 +682,6 @@ export async function clearChatMessages(userId: string): Promise<void> {
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
@@ -722,7 +702,6 @@ export async function logMeetingAction(userId: string, log: Omit<MeetingAuditLog
     if (log.eventId) docData.eventId = log.eventId;
     if (log.startDateTime) docData.startDateTime = log.startDateTime;
     if (log.endDateTime) docData.endDateTime = log.endDateTime;
-
     const docRef = await addDoc(colRef, docData);
     return docRef.id;
   } catch (err: any) {
@@ -730,7 +709,6 @@ export async function logMeetingAction(userId: string, log: Omit<MeetingAuditLog
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.CREATE, path);
     }
@@ -755,7 +733,6 @@ export async function getRecentMeetingLogs(userId: string): Promise<MeetingAudit
       err?.code === 'permission-denied' ||
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
-
     if (isPerm) {
       handleFirestoreError(err, OperationType.GET, path);
     }
