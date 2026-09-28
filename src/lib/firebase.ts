@@ -11,3 +11,6 @@ export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   ignoreUndefinedProperties: true,
 });
+
+export { googleSignIn, getAccessToken, logout } from './firebase-compat';
+export { listenAuthChanges as initAuth } from './firebase-auth';
