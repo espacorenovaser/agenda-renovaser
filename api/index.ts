@@ -174,56 +174,6 @@ const openAITools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'loginUser',
-      description: 'Efetua login do usuário com e-mail e senha no sistema do Instituto RenovaSer.',
-      parameters: {
-        type: 'object',
-        properties: {
-          email: {
-            type: 'string',
-            description: 'E-mail do administrador ou profissional',
-          },
-          password: {
-            type: 'string',
-            description: 'Senha informada pelo usuário',
-          },
-        },
-        required: ['email', 'password'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'registerProfessional',
-      description: 'Cadastra um novo profissional com hora marcada no Instituto RenovaSer.',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: {
-            type: 'string',
-            description: 'Nome completo do profissional',
-          },
-          email: {
-            type: 'string',
-            description: 'E-mail do profissional',
-          },
-          password: {
-            type: 'string',
-            description: 'Senha escolhida pelo profissional',
-          },
-          specialty: {
-            type: 'string',
-            description: 'Área de atuação (ex: Psicólogo, Fisioterapeuta, Nutricionista)',
-          },
-        },
-        required: ['name', 'email', 'password', 'specialty'],
-      },
-    },
-  },
 ];
 
 // Helper: Run chat with OpenAI and function calling
@@ -509,7 +459,7 @@ async function generateContentWithRetry(
 app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    const { message, history, nowIso, activeUser, registeredUsers, currentEvents } = req.body;
+    const { message, history, nowIso, activeUser, currentEvents } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Mensagem vazia.' });
@@ -668,59 +618,11 @@ app.post(['/api/assistant/chat', '/assistant/chat'], async (req, res) => {
       },
     };
 
-    const loginUserDecl: FunctionDeclaration = {
-      name: 'loginUser',
-      description: 'Efetua login do usuário com e-mail e senha no sistema do Instituto RenovaSer.',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          email: {
-            type: Type.STRING,
-            description: 'E-mail do administrador ou profissional',
-          },
-          password: {
-            type: Type.STRING,
-            description: 'Senha informada pelo usuário',
-          },
-        },
-        required: ['email', 'password'],
-      },
-    };
-
-    const registerProfessionalDecl: FunctionDeclaration = {
-      name: 'registerProfessional',
-      description: 'Cadastra um novo profissional com hora marcada no Instituto RenovaSer.',
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          name: {
-            type: Type.STRING,
-            description: 'Nome completo do profissional',
-          },
-          email: {
-            type: Type.STRING,
-            description: 'E-mail do profissional',
-          },
-          password: {
-            type: Type.STRING,
-            description: 'Senha escolhida pelo profissional',
-          },
-          specialty: {
-            type: Type.STRING,
-            description: 'Área de atuação (ex: Psicólogo, Fisioterapeuta, Nutricionista)',
-          },
-        },
-        required: ['name', 'email', 'password', 'specialty'],
-      },
-    };
-
-    const usersList: any[] = Array.isArray(registeredUsers) ? registeredUsers : [];
-    const registeredTherapists = usersList.filter((u: any) => u.role === 'professional');
     const defaultTherapists = [
       { name: 'Dr. Lucas Ramos', email: 'lucas.psico@institutorenovaser.com.br', specialty: 'Psicólogo' },
       { name: 'Dra. Mariana Silva', email: 'mariana.fisio@institutorenovaser.com.br', specialty: 'Fisioterapeuta' },
     ];
-    const effectiveTherapists = registeredTherapists.length > 0 ? registeredTherapists : defaultTherapists;
+    const effectiveTherapists = defaultTherapists;
 
     const systemInstruction = `Você é o aplicativo completo de "Agenda Interna do Instituto RenovaSer". Sua função é gerenciar toda a agenda do instituto: atendimentos dos profissionais com hora marcada, eventos gerais, reuniões da equipe de terapeutas e comunicação por e-mail.
 
@@ -760,27 +662,10 @@ REUNIÕES DE EQUIPE E SELEÇÃO DE PARTICIPANTES (REGRA OBRIGATÓRIA):
     - Término: se o usuário não tiver dito a duração exata, adote 1 hora padrão (19:30 às 20:30) e informe que o tempo está definido de forma flexível conforme a necessidade da equipe.
     - Execute IMEDIATAMENTE a ferramenta 'createCalendarEvent' com category: 'reuniao', startDateTime correspondente à data de hoje às 19:30:00-03:00 e endDateTime às 20:30:00-03:00.
 
-CONTAS E ACESSOS:
-
-1. ADMINISTRADORES (acesso total e idêntico):
-Existem 3 administradores que enxergam e gerenciam TUDO (agenda completa, todos os profissionais, todos os agendamentos e eventos). Os 3 acessam exatamente o MESMO conteúdo — qualquer ação de um aparece para os outros:
-- Claudir (e-mail: claudirisrael@gmail.com, senha: Rs12345678)
-- Cleci (e-mail: clecimarchioro@gmail.com, senha: Rs12345678)
-- Gorete (e-mail: mmgorete00@gmail.com, senha: RS12345678)
-
-2. PROFISSIONAIS (acesso restrito à própria agenda):
-- CADASTRO: o profissional informa nome completo, e-mail, senha escolhida por ele e área de atuação (ex: psicólogo, fisioterapeuta, nutricionista). Após cadastrar com 'registerProfessional', já pode fazer login.
-- LOGIN: todo acesso é por e-mail + senha (admins e profissionais) usando 'loginUser'.
-- O profissional SÓ vê e SÓ altera a PRÓPRIA agenda de atendimentos. Ele NÃO vê a agenda dos outros profissionais.
-- O profissional PODE ver a agenda geral de eventos do instituto (avisos, datas, eventos), mas NÃO os atendimentos de colegas.
-
-FLUXO DE LOGIN (OBRIGATÓRIO):
-- Ao receber e-mail e senha, chame 'loginUser' para verificar se o usuário existe e se a senha coincide.
-- Se correto: 'Login realizado. Bem-vindo(a), [nome]. Acesso: [Administrador/Profissional].'
-- Se errado: 'E-mail ou senha incorretos. Tente novamente.'
-- NUNCA revele senha de um usuário para outro.
-- Se o usuário não tiver cadastro e for profissional, ofereça o fluxo de cadastro antes:
-  "Não encontrei seu cadastro. Para se cadastrar como profissional, por favor informe: nome completo, e-mail, área de atuação (ex: psicólogo, fisioterapeuta, nutricionista) e a senha desejada."
+CONTAS E ACESSOS (Firebase Auth — nunca peça, exiba ou valide senhas aqui):
+- A autenticação é feita exclusivamente pelo Firebase Auth na interface (login com e-mail/senha ou Google). Verificação de credenciais ocorre nos servidores do Firebase; este assistente NÃO realiza login nem cadastro.
+- 3 administradores têm acesso total e idêntico (agenda completa). Profissionais têm acesso restrito à própria agenda de atendimentos + eventos gerais do instituto.
+- Se o usuário pedir login/cadastro, oriente a usar a tela de login do app. NUNCA solicite, repita ou revele senhas.
 
 USUÁRIO ATUAL NA SESSÃO:
 ${activeUser ? `Usuário ativo: ${activeUser.name} (${activeUser.email}) — Acesso: ${activeUser.role === 'admin' ? 'Administrador' : `Profissional (${activeUser.specialty || 'Área da Saúde'})`}` : 'Nenhum usuário logado na interface ainda. Solicite e-mail e senha para login quando necessário.'}
@@ -843,102 +728,12 @@ TOM:
 - Liste compromissos em tópicos organizados por data e horário.
 - Para admins, identifique de quem é cada atendimento.`;
 
-    const ADMIN_CREDENTIALS = [
-      { name: 'Claudir', email: 'claudirisrael@gmail.com', pass: 'Rs12345678', role: 'admin' },
-      { name: 'Cleci', email: 'clecimarchioro@gmail.com', pass: 'Rs12345678', role: 'admin' },
-      { name: 'Gorete', email: 'mmgorete00@gmail.com', pass: 'RS12345678', role: 'admin' },
-    ];
-
-    let sessionAuthUser: any = null;
-    let sessionNewRegisteredUser: any = null;
     let pendingActions: any[] = [];
     let executedEvents: any[] = [];
     let isAuthExpired = false;
 
     // Tool execution helper
     async function executeCalendarTool(callName: string, callArgs: any) {
-      if (callName === 'loginUser') {
-        const emailClean = (callArgs.email || '').trim().toLowerCase();
-        const passClean = (callArgs.password || '').trim();
-
-        const adminFound = ADMIN_CREDENTIALS.find((a) => a.email.toLowerCase() === emailClean);
-        if (adminFound) {
-          if (adminFound.pass === passClean) {
-            sessionAuthUser = {
-              id: 'admin-' + adminFound.name.toLowerCase(),
-              name: adminFound.name,
-              email: adminFound.email,
-              role: 'admin',
-            };
-            return {
-              success: true,
-              user: sessionAuthUser,
-              message: `Login realizado. Bem-vindo(a), ${adminFound.name}. Acesso: Administrador.`,
-            };
-          } else {
-            return {
-              success: false,
-              message: 'E-mail ou senha incorretos. Tente novamente.',
-            };
-          }
-        }
-
-        const usersList = Array.isArray(registeredUsers) ? registeredUsers : [];
-        const foundProf = usersList.find((u: any) => u.email?.toLowerCase() === emailClean);
-        if (foundProf && (foundProf.passwordHash === passClean || foundProf.password === passClean)) {
-          sessionAuthUser = {
-            id: foundProf.id,
-            name: foundProf.name,
-            email: foundProf.email,
-            role: 'professional',
-            specialty: foundProf.specialty,
-          };
-          return {
-            success: true,
-            user: sessionAuthUser,
-            message: `Login realizado. Bem-vindo(a), ${foundProf.name}. Acesso: Profissional.`,
-          };
-        }
-
-        return {
-          success: false,
-          message: 'E-mail ou senha incorretos. Tente novamente.',
-        };
-      }
-
-      if (callName === 'registerProfessional') {
-        const cleanEmail = (callArgs.email || '').trim().toLowerCase();
-        const cleanName = (callArgs.name || '').trim();
-        const cleanPass = (callArgs.password || '').trim();
-        const cleanSpec = (callArgs.specialty || '').trim();
-
-        const newUser = {
-          id: 'prof-' + Date.now(),
-          name: cleanName,
-          email: cleanEmail,
-          role: 'professional',
-          specialty: cleanSpec,
-          passwordHash: cleanPass,
-          createdAt: new Date().toISOString(),
-        };
-
-        sessionNewRegisteredUser = newUser;
-        sessionAuthUser = {
-          id: newUser.id,
-          name: newUser.name,
-          email: newUser.email,
-          role: 'professional',
-          specialty: newUser.specialty,
-          createdAt: newUser.createdAt,
-        };
-
-        return {
-          success: true,
-          user: sessionAuthUser,
-          message: `Cadastro realizado com sucesso! Login realizado. Bem-vindo(a), ${cleanName}. Acesso: Profissional.`,
-        };
-      }
-
       if (callName === 'listCalendarEvents') {
         // Check live Google Calendar API if authHeader is available
         if (authHeader) {
@@ -1410,8 +1205,6 @@ TOM:
           pendingActions: [],
           executedEvents: [],
           authExpired: false,
-          authenticatedUser: sessionAuthUser,
-          newRegisteredUser: sessionNewRegisteredUser,
           providerUsed: 'fast-path (conflito detectado)',
         });
       }
@@ -1453,8 +1246,6 @@ TOM:
           pendingActions: [],
           executedEvents: [ev],
           authExpired: isAuthExpired,
-          authenticatedUser: sessionAuthUser,
-          newRegisteredUser: sessionNewRegisteredUser,
           providerUsed: 'fast-path (instantâneo)',
         });
       }
@@ -1499,8 +1290,6 @@ TOM:
           createCalendarEventDecl,
           requestEventCancellationDecl,
           requestEventUpdateDecl,
-          loginUserDecl,
-          registerProfessionalDecl,
         ],
       },
     ];
@@ -1636,8 +1425,6 @@ TOM:
       pendingActions,
       executedEvents,
       authExpired: isAuthExpired,
-      authenticatedUser: sessionAuthUser,
-      newRegisteredUser: sessionNewRegisteredUser,
       providerUsed: usedProvider,
     });
   } catch (error: any) {

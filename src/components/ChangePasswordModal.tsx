@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { X, Lock, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { TherapistUser } from '../types';
-import { changeUserPassword } from '../lib/authService';
+import { changePassword } from '../lib/authService';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: TherapistUser;
-  onPasswordChanged: (updatedUser: TherapistUser) => void;
+  onPasswordChanged: () => void;
 }
 
 export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
@@ -28,8 +28,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (newPassword.length < 4) {
-      setError('A nova senha deve ter no mínimo 4 caracteres.');
+    if (newPassword.length < 6) {
+      setError('A nova senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
@@ -40,9 +40,9 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     setIsSaving(true);
     try {
-      const updated = await changeUserPassword(currentUser.id, newPassword, currentUser);
+      await changePassword(newPassword);
       setSuccess(true);
-      onPasswordChanged(updated);
+      onPasswordChanged();
       setTimeout(() => {
         setSuccess(false);
         setNewPassword('');
@@ -103,7 +103,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mínimo 4 caracteres"
+                placeholder="Mínimo 6 caracteres"
+                autoComplete="new-password"
                 className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none"
               />
             </div>
@@ -121,6 +122,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repita a nova senha"
+                autoComplete="new-password"
                 className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 outline-none"
               />
             </div>
