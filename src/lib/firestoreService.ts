@@ -12,7 +12,8 @@ import {
   deleteDoc,
   onSnapshot,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db } from './firebase';
+import { FirestoreOperation, logAndThrowFirestoreError as handleFirestoreError } from './firestore-errors';
 import type { ChatMessage, MeetingAuditLog, UserProfile, Evento, TherapistUser } from '../types';
 
 // Validate connection to Firestore on initialization
@@ -309,7 +310,7 @@ export function subscribeToEvents(
         error?.message?.includes('permission-denied') ||
         error?.message?.includes('Missing or insufficient permissions');
       if (isPerm) {
-        handleFirestoreError(error, OperationType.GET, path);
+        handleFirestoreError(error, FirestoreOperation.Get, path);
       }
       console.warn('Events subscription error (offline/transient):', error?.message || error);
       // Fallback seguro em caso de indisponibilidade
@@ -361,7 +362,7 @@ export async function saveEvent(event: Omit<Evento, 'id'> & { id?: string }): Pr
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.WRITE, path);
+      handleFirestoreError(err, FirestoreOperation.Update, path);
     }
     console.error('Erro ao salvar evento no Firestore (mantido localmente):', err);
     return eventId;
@@ -392,7 +393,7 @@ export async function deleteEvent(eventId: string): Promise<void> {
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.DELETE, path);
+      handleFirestoreError(err, FirestoreOperation.Delete, path);
     }
     console.error('Erro ao excluir evento do Firestore:', err);
   }
@@ -462,7 +463,7 @@ export function subscribeToTherapists(
         error?.message?.includes('permission-denied') ||
         error?.message?.includes('Missing or insufficient permissions');
       if (isPerm) {
-        handleFirestoreError(error, OperationType.GET, path);
+        handleFirestoreError(error, FirestoreOperation.Get, path);
       }
       console.warn('Therapists subscription error (offline/transient):', error?.message || error);
       const cached = getCachedLocalTherapists();
@@ -516,7 +517,7 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.WRITE, path);
+      handleFirestoreError(err, FirestoreOperation.Update, path);
     }
     console.error('Erro ao salvar terapeuta no Firestore:', err);
     return userId;
@@ -539,7 +540,7 @@ export async function updateTherapistPassword(userId: string, newPassword: strin
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.WRITE, path);
+      handleFirestoreError(err, FirestoreOperation.Update, path);
     }
     console.error('Erro ao atualizar senha no Firestore:', err);
     throw err;
@@ -560,7 +561,7 @@ export async function deleteTherapist(therapistId: string): Promise<void> {
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.DELETE, path);
+      handleFirestoreError(err, FirestoreOperation.Delete, path);
     }
     console.error('Erro ao excluir utilizador do Firestore:', err);
     throw err;
@@ -594,7 +595,7 @@ export async function syncUserProfile(user: { uid: string; displayName?: string 
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.WRITE, path);
+      handleFirestoreError(err, FirestoreOperation.Update, path);
     }
     console.warn('Could not sync user profile in Firestore (offline/transient):', err?.message || err);
     return {
@@ -633,7 +634,7 @@ export async function saveChatMessage(userId: string, message: Omit<ChatMessage,
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.CREATE, path);
+      handleFirestoreError(err, FirestoreOperation.Create, path);
     }
     console.warn('Could not save chat message to Firestore (offline/transient):', err?.message || err);
     return undefined;
@@ -659,7 +660,7 @@ export function subscribeToMessages(userId: string, callback: (msgs: ChatMessage
         error?.message?.includes('permission-denied') ||
         error?.message?.includes('Missing or insufficient permissions');
       if (isPerm) {
-        handleFirestoreError(error, OperationType.GET, path);
+        handleFirestoreError(error, FirestoreOperation.Get, path);
       }
       console.warn('Message subscription error (offline/transient):', error?.message || error);
       if (onError) onError(error);
@@ -683,7 +684,7 @@ export async function clearChatMessages(userId: string): Promise<void> {
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.DELETE, path);
+      handleFirestoreError(err, FirestoreOperation.Delete, path);
     }
     console.warn('Could not clear chat messages from Firestore (offline/transient):', err?.message || err);
   }
@@ -710,7 +711,7 @@ export async function logMeetingAction(userId: string, log: Omit<MeetingAuditLog
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.CREATE, path);
+      handleFirestoreError(err, FirestoreOperation.Create, path);
     }
     console.warn('Could not log meeting action in Firestore (offline/transient):', err?.message || err);
     return undefined;
@@ -734,7 +735,7 @@ export async function getRecentMeetingLogs(userId: string): Promise<MeetingAudit
       err?.message?.includes('permission-denied') ||
       err?.message?.includes('Missing or insufficient permissions');
     if (isPerm) {
-      handleFirestoreError(err, OperationType.GET, path);
+      handleFirestoreError(err, FirestoreOperation.Get, path);
     }
     console.warn('Could not fetch meeting logs from Firestore (offline/transient):', err?.message || err);
     return [];

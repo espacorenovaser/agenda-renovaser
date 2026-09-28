@@ -46,6 +46,7 @@ export interface TherapistUser {
   email: string;
   role: 'admin' | 'terapeuta';
   technique?: string;
+  password?: string;
   createdAt?: string;
 }
 
