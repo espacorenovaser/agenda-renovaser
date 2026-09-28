@@ -106,7 +106,7 @@ export async function registerNewUser(
     name: string;
     email: string;
     password: string;
-    role: 'admin' | 'terapeuta';
+    role?: 'admin' | 'terapeuta';
     technique?: string;
   },
   existingTherapists: TherapistUser[]
@@ -130,7 +130,7 @@ export async function registerNewUser(
     id: newId,
     name: cleanName,
     email: cleanEmail,
-    role: data.role,
+    role: 'terapeuta',
     technique: cleanTechnique || undefined,
     password: cleanPassword,
     createdAt: new Date().toISOString(),
@@ -155,20 +155,12 @@ export async function changeUserPassword(
   return updatedUser;
 }
 
-// Mapeamento temporário de e-mails para papéis enquanto não há coleção de perfis
-const ADMIN_EMAILS = [
-  'claudirisrael@gmail.com',
-  'mmgorete00@gmail.com',
-  'clecimarchioro@gmail.com',
-  'espacorenovaser@gmail.com',
-];
-
 export function mapFirebaseUserToTherapistUser(fbUser: FirebaseUser): TherapistUser {
   return {
     id: fbUser.uid,
     name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Usuário',
     email: fbUser.email || '',
-    role: ADMIN_EMAILS.includes(fbUser.email?.toLowerCase() || '') ? 'admin' : 'terapeuta',
+    role: 'terapeuta',
     createdAt: fbUser.metadata.creationTime || new Date().toISOString(),
   };
 }

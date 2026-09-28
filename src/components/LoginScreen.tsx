@@ -41,7 +41,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
   const [regTechnique, setRegTechnique] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [regRole, setRegRole] = useState<'terapeuta' | 'admin'>('terapeuta');
   const [regError, setRegError] = useState<string | null>(null);
 
   // Contas sugeridas para facilitar teste
@@ -113,12 +112,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
       if (existing) {
         onLoginSuccess(existing);
       } else {
-        const isAdmin = email.includes('renovaser') || email.includes('claudirisrael');
         const newUser: TherapistUser = {
           id: `usr-${Date.now()}`,
           name: res.user.displayName || email.split('@')[0],
           email: email,
-          role: isAdmin ? 'admin' : 'terapeuta',
+          role: 'terapeuta',
           technique: 'Atendimento Integrativo',
           password: 'google-oauth-auth',
           createdAt: new Date().toISOString(),
@@ -157,7 +155,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
           email: regEmail,
           technique: regTechnique,
           password: regPassword,
-          role: regRole,
         },
         therapists
       );
@@ -421,20 +418,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                     placeholder="Ex: Tarô, Reiki, Florais, Acupuntura"
                     className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Papel no Instituto
-                  </label>
-                  <select
-                    value={regRole}
-                    onChange={(e) => setRegRole(e.target.value as 'terapeuta' | 'admin')}
-                    className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all"
-                  >
-                    <option value="terapeuta">Terapeuta (Acesso exclusivo à sua própria agenda)</option>
-                    <option value="admin">Administrador (Acesso total a todas as agendas)</option>
-                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
