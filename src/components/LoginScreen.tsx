@@ -12,8 +12,7 @@ import {
 } from 'lucide-react';
 import type { TherapistUser } from '../types';
 import { login, register, mapFirebaseUserToTherapistUser } from '../lib/authService';
-import { googleSignIn } from '../lib/firebase';
-import { saveTherapist } from '../lib/firestoreService';
+import { saveTherapist } from '../lib/supabaseService';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: TherapistUser) => void;
@@ -71,17 +70,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setIsGoogleLoading(true);
     setLoginError(null);
     try {
-      const res = await googleSignIn();
-      if (!res?.user) {
-        throw new Error('Não foi possível autenticar com o Google.');
-      }
-      const user = mapFirebaseUserToTherapistUser(res.user);
-      await saveTherapist({ id: user.id, name: user.name, email: user.email, role: user.role, technique: 'Atendimento Integrativo' });
-      onLoginSuccess(user);
-    } catch (err: any) {
-      if (!err?.message?.includes('popup-closed-by-user')) {
-        setLoginError(friendlyAuthError(err));
-      }
+      setLoginError('Google login será integrado em breve com Supabase OAuth.');
     } finally {
       setIsGoogleLoading(false);
     }
