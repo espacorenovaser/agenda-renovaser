@@ -31,12 +31,12 @@ export async function testConnection() {
 testConnection().catch(() => {});
 
 export const DEFAULT_THERAPISTS: TherapistUser[] = [
-  { id: 'admin1', name: 'Claudir Israel', email: 'claudirisrael@gmail.com', role: 'admin', password: 'Rs12345678' },
-  { id: 'admin2', name: 'Maria Gorete', email: 'mmgorete00@gmail.com', role: 'admin', password: 'Rs12345678' },
-  { id: 'admin3', name: 'Cleci Marchioro', email: 'clecimarchioro@gmail.com', role: 'admin', password: 'Rs12345678' },
-  { id: 'admin4', name: 'Espaço RenovaSer', email: 'espacorenovaser@gmail.com', role: 'admin', password: 'renovaser123' },
-  { id: 'terapeuta1', name: 'Dr. Lucas', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta', technique: 'Psicoterapia', password: 'renovaser123' },
-  { id: 'terapeuta2', name: 'Adriana Israel', email: 'acky0608@gmail.com', role: 'terapeuta', technique: 'Tarô', password: 'renovaser123' }
+  { id: 'admin1', name: 'Claudir Israel', email: 'claudirisrael@gmail.com', role: 'admin' },
+  { id: 'admin2', name: 'Maria Gorete', email: 'mmgorete00@gmail.com', role: 'admin' },
+  { id: 'admin3', name: 'Cleci Marchioro', email: 'clecimarchioro@gmail.com', role: 'admin' },
+  { id: 'admin4', name: 'Espaço RenovaSer', email: 'espacorenovaser@gmail.com', role: 'admin' },
+  { id: 'terapeuta1', name: 'Dr. Lucas', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta', technique: 'Psicoterapia' },
+  { id: 'terapeuta2', name: 'Adriana Israel', email: 'acky0608@gmail.com', role: 'terapeuta', technique: 'Tarô' }
 ];
 
 export const DEFAULT_EVENTS: Evento[] = [
@@ -194,12 +194,17 @@ export function setCachedLocalEvents(events: Evento[]): void {
   }
 }
 
+function stripSensitiveFields(t: any): TherapistUser {
+  const { password, passwordHash, ...safe } = t ?? {};
+  return safe as TherapistUser;
+}
+
 export function getCachedLocalTherapists(): TherapistUser[] {
   try {
     const raw = localStorage.getItem(LOCAL_THERAPISTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(stripSensitiveFields);
     }
   } catch (e) {
     console.warn('Erro ao ler cache local de terapeutas:', e);
@@ -209,7 +214,7 @@ export function getCachedLocalTherapists(): TherapistUser[] {
 
 export function setCachedLocalTherapists(therapists: TherapistUser[]): void {
   try {
-    localStorage.setItem(LOCAL_THERAPISTS_KEY, JSON.stringify(therapists));
+    localStorage.setItem(LOCAL_THERAPISTS_KEY, JSON.stringify(therapists.map(stripSensitiveFields)));
   } catch (e) {
     console.warn('Erro ao gravar cache local de terapeutas:', e);
   }
@@ -447,7 +452,6 @@ export function subscribeToTherapists(
             email: data.email,
             role: data.role === 'admin' ? 'admin' : 'terapeuta',
             technique: data.technique || '',
-            password: data.password || 'renovaser123',
             createdAt: data.createdAt,
           });
         }
@@ -486,7 +490,6 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
     email: therapist.email,
     role: therapist.role || 'terapeuta',
     technique: therapist.technique || '',
-    password: therapist.password || 'renovaser123',
     createdAt: therapist.createdAt || new Date().toISOString(),
   };
 
@@ -521,29 +524,6 @@ export async function saveTherapist(therapist: Omit<TherapistUser, 'id'> & { id?
     }
     console.error('Erro ao salvar terapeuta no Firestore:', err);
     return userId;
-  }
-}
-
-/**
- * Atualiza a senha de um terapeuta/usuário no Firestore
- */
-export async function updateTherapistPassword(userId: string, newPassword: string): Promise<void> {
-  const path = USERS_COLLECTION;
-  const userDoc = doc(db, USERS_COLLECTION, userId);
-  try {
-    const writePromise = setDoc(userDoc, { password: newPassword }, { merge: true });
-    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 4000));
-    await Promise.race([writePromise, timeoutPromise]);
-  } catch (err: any) {
-    const isPerm =
-      err?.code === 'permission-denied' ||
-      err?.message?.includes('permission-denied') ||
-      err?.message?.includes('Missing or insufficient permissions');
-    if (isPerm) {
-      handleFirestoreError(err, FirestoreOperation.Update, path);
-    }
-    console.error('Erro ao atualizar senha no Firestore:', err);
-    throw err;
   }
 }
 
