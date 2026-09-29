@@ -61,7 +61,7 @@ import {
   RENOVASER_ROOMS 
 } from './lib/roomService';
 import { parseAssistantCommand } from './lib/assistantParser';
-import { getCurrentSessionUser, logoutSession } from './lib/authService';
+import { clearLegacyLocalAuth, logout as firebaseLogout, onAuthChange } from './lib/authService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
@@ -73,9 +73,19 @@ import { RoomSelector } from './components/RoomSelector';
 import { RoomsOccupancyBar } from './components/RoomsOccupancyBar';
 
 export default function Dashboard() {
-  // --- ESTADO DE AUTENTICAÇÃO E SESSÃO ---
-  const [currentUser, setCurrentUser] = useState<TherapistUser | null>(() => getCurrentSessionUser());
+  // --- ESTADO DE AUTENTICAÇÃO E SESSÃO (Firebase Auth como fonte única) ---
+  const [currentUser, setCurrentUser] = useState<TherapistUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+
+  useEffect(() => {
+    clearLegacyLocalAuth();
+    const unsub = onAuthChange((user) => {
+      setCurrentUser(user);
+      setIsAuthLoading(false);
+    });
+    return () => unsub();
+  }, []);
 
   // --- ESTADOS DO FIRESTORE ---
   const [events, setEvents] = useState<Evento[]>(DEFAULT_EVENTS);
@@ -113,13 +123,12 @@ export default function Dashboard() {
     clientWhatsApp: ''
   });
 
-  // --- FORMULÁRIO DE NOVO UTILIZADOR ---
+  // --- FORMULÁRIO DE NOVO UTILIZADOR (perfil Firestore; credencial fica no Firebase Auth) ---
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
     role: 'terapeuta' as 'admin' | 'terapeuta',
     technique: '',
-    password: 'renovaser123'
   });
 
   // --- ESTADO DO CHAT / ASSISTENTE ---
@@ -437,7 +446,7 @@ export default function Dashboard() {
     }
   };
 
-  // --- LÓGICA DE CADASTRO DE UTILIZADOR ---
+  // --- LÓGICA DE CADASTRO DE UTILIZADOR (perfil; senha gerida no Firebase Auth) ---
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name.trim() || !newUser.email.trim()) return;
@@ -447,17 +456,16 @@ export default function Dashboard() {
     const candidateEmail = newUser.email.trim();
     const candidateRole = newUser.role;
     const candidateTechnique = newUser.technique.trim();
-    const candidatePassword = newUser.password.trim() || 'renovaser123';
 
     try {
       const generatedId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      
+
       // Atualização otimista imediata para que o usuário não fique esperando
       setTherapists((prev) => {
         const exists = prev.some((t) => t.email.toLowerCase() === candidateEmail.toLowerCase());
         if (exists) {
           return prev.map((t) => t.email.toLowerCase() === candidateEmail.toLowerCase()
-            ? { ...t, name: candidateName, role: candidateRole, technique: candidateTechnique, password: candidatePassword }
+            ? { ...t, name: candidateName, role: candidateRole, technique: candidateTechnique }
             : t
           );
         }
@@ -469,7 +477,6 @@ export default function Dashboard() {
             email: candidateEmail,
             role: candidateRole,
             technique: candidateTechnique,
-            password: candidatePassword,
             createdAt: new Date().toISOString(),
           }
         ];
@@ -481,13 +488,12 @@ export default function Dashboard() {
         email: candidateEmail,
         role: candidateRole,
         technique: candidateTechnique || undefined,
-        password: candidatePassword,
         createdAt: new Date().toISOString()
       });
 
       setShowNewUserModal(false);
-      setNewUser({ name: '', email: '', role: 'terapeuta', technique: '', password: 'renovaser123' });
-      showNotification(`Profissional "${candidateName}" cadastrado com sucesso!`);
+      setNewUser({ name: '', email: '', role: 'terapeuta', technique: '' });
+      showNotification(`Profissional "${candidateName}" cadastrado com sucesso! Oriente-o a criar a senha na tela de login (Primeiro Acesso).`);
     } catch (err: any) {
       console.error('Erro ao cadastrar profissional:', err);
       showNotification('Erro ao cadastrar profissional: ' + (err.message || err), 'error');
@@ -689,11 +695,18 @@ export default function Dashboard() {
     return acc;
   }, {});
 
-  // TELA DE LOGIN OBRIGATÓRIA: SE NÃO HOUVER USUÁRIO LOGADO COM SENHA
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs text-slate-500">
+        Verificando sessão...
+      </div>
+    );
+  }
+
+  // TELA DE LOGIN OBRIGATÓRIA: SE NÃO HOUVER USUÁRIO AUTENTICADO NO FIREBASE
   if (!currentUser) {
     return (
       <LoginScreen
-        therapists={therapists}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
           showNotification(`Acesso autorizado! Bem-vindo(a), ${user.name}.`);
@@ -791,10 +804,14 @@ export default function Dashboard() {
             {/* Botão Sair / Logout */}
             <button
               type="button"
-              onClick={() => {
-                logoutSession();
-                setCurrentUser(null);
-                showNotification('Sessão encerrada com sucesso.');
+              onClick={async () => {
+                clearLegacyLocalAuth();
+                try {
+                  await firebaseLogout();
+                } finally {
+                  setCurrentUser(null);
+                  showNotification('Sessão encerrada com sucesso.');
+                }
               }}
               title="Sair do Sistema"
               className="flex items-center gap-1 px-2.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 cursor-pointer"
@@ -1574,22 +1591,9 @@ export default function Dashboard() {
                   <option value="admin">Administrador</option>
                 </select>
               </div>
-              <div>
-                <label className="font-medium text-slate-700 block mb-1">
-                  Senha Inicial de Acesso
-                </label>
-                <input 
-                  type="text" 
-                  required 
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="Ex: renovaser123" 
-                  className="w-full p-2 bg-slate-50 border rounded-lg focus:outline-none focus:border-emerald-500 font-mono text-xs" 
-                />
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  O profissional poderá alterar a senha ao realizar login.
-                </p>
-              </div>
+              <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                O acesso é criado na tela de login (Primeiro Acesso) com e-mail e senha via Firebase Auth. Nenhuma senha é guardada aqui.
+              </p>
               <div className="pt-3 flex justify-end gap-2">
                 <button 
                   type="button" 
@@ -1619,8 +1623,7 @@ export default function Dashboard() {
           isOpen={showChangePasswordModal}
           onClose={() => setShowChangePasswordModal(false)}
           currentUser={currentUser}
-          onPasswordChanged={(updatedUser) => {
-            setCurrentUser(updatedUser);
+          onPasswordChanged={() => {
             showNotification('Senha atualizada com sucesso!');
           }}
         />

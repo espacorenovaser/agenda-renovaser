@@ -1,33 +1,27 @@
 import React, { useState } from 'react';
-import { 
-  Shield, 
-  Lock, 
-  Mail, 
-  Eye, 
-  EyeOff, 
-  UserCheck, 
-  Sparkles, 
-  AlertCircle, 
-  CheckCircle2, 
-  ArrowRight,
+import {
+  Shield,
+  Lock,
+  Mail,
+  Eye,
+  EyeOff,
+  UserCheck,
+  AlertCircle,
   UserPlus,
-  Compass,
-  KeyRound
+  KeyRound,
 } from 'lucide-react';
 import type { TherapistUser } from '../types';
-import { authenticateWithPassword, registerNewUser } from '../lib/authService';
+import { login, register, mapFirebaseUserToTherapistUser } from '../lib/authService';
 import { googleSignIn } from '../lib/firebase';
 import { saveTherapist } from '../lib/firestoreService';
 
 interface LoginScreenProps {
-  therapists: TherapistUser[];
   onLoginSuccess: (user: TherapistUser) => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuccess }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [tab, setTab] = useState<'login' | 'register'>('login');
-  
-  // Estados do Login
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -35,7 +29,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // Estados do Cadastro
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regTechnique, setRegTechnique] = useState('');
@@ -43,57 +36,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regError, setRegError] = useState<string | null>(null);
 
-  // Contas sugeridas para facilitar teste
-  const sampleAccounts = [
-    {
-      name: 'Claudir Israel',
-      email: 'claudirisrael@gmail.com',
-      role: 'admin',
-      roleLabel: 'Administrador (Acesso Total)',
-      technique: 'Gestão & Coordenação',
-      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
-      password: 'Rs12345678',
-    },
-    {
-      name: 'Adriana Israel',
-      email: 'acky0608@gmail.com',
-      role: 'terapeuta',
-      roleLabel: 'Terapeuta (Acesso Restrito)',
-      technique: 'Tarô Terapêutico',
-      badgeColor: 'bg-purple-100 text-purple-800 border-purple-300',
-      password: 'renovaser123',
-    },
-    {
-      name: 'Dr. Lucas',
-      email: 'lucas.psico@institutorenovaser.com.br',
-      role: 'terapeuta',
-      roleLabel: 'Terapeuta (Acesso Restrito)',
-      technique: 'Psicoterapia Integrativa',
-      badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-      password: 'renovaser123',
+  const friendlyAuthError = (err: any): string => {
+    const code = err?.code || '';
+    if (code.includes('user-not-found') || code.includes('wrong-password') || code.includes('invalid-credential')) {
+      return 'E-mail ou senha incorretos. Tente novamente.';
     }
-  ];
-
-  const handleQuickSelect = (acc: typeof sampleAccounts[0]) => {
-    setLoginEmail(acc.email);
-    setLoginPassword(acc.password);
-    setLoginError(null);
+    if (code.includes('email-already-in-use')) {
+      return 'Já existe uma conta com este e-mail. Faça login.';
+    }
+    if (code.includes('weak-password')) {
+      return 'A senha deve ter no mínimo 6 caracteres.';
+    }
+    if (code.includes('invalid-email')) {
+      return 'Informe um e-mail válido.';
+    }
+    return err?.message || 'Erro inesperado ao realizar login.';
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
     setIsSubmitting(true);
-
     try {
-      const result = authenticateWithPassword(loginEmail, loginPassword, therapists);
-      if (result.success && result.user) {
-        onLoginSuccess(result.user);
-      } else {
-        setLoginError(result.message);
-      }
+      const user = await login(loginEmail, loginPassword);
+      onLoginSuccess(user);
     } catch (err: any) {
-      setLoginError(err.message || 'Erro inesperado ao realizar login.');
+      setLoginError(friendlyAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -107,26 +75,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
       if (!res?.user) {
         throw new Error('Não foi possível autenticar com o Google.');
       }
-      const email = res.user.email || '';
-      const existing = therapists.find((t) => t.email.toLowerCase() === email.toLowerCase());
-      if (existing) {
-        onLoginSuccess(existing);
-      } else {
-        const newUser: TherapistUser = {
-          id: `usr-${Date.now()}`,
-          name: res.user.displayName || email.split('@')[0],
-          email: email,
-          role: 'terapeuta',
-          technique: 'Atendimento Integrativo',
-          password: 'google-oauth-auth',
-          createdAt: new Date().toISOString(),
-        };
-        await saveTherapist(newUser);
-        onLoginSuccess(newUser);
-      }
+      const user = mapFirebaseUserToTherapistUser(res.user);
+      await saveTherapist({ id: user.id, name: user.name, email: user.email, role: user.role, technique: 'Atendimento Integrativo' });
+      onLoginSuccess(user);
     } catch (err: any) {
       if (!err?.message?.includes('popup-closed-by-user')) {
-        setLoginError(err.message || 'Erro ao autenticar com o Google.');
+        setLoginError(friendlyAuthError(err));
       }
     } finally {
       setIsGoogleLoading(false);
@@ -142,25 +96,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
       return;
     }
 
-    if (regPassword.length < 4) {
-      setRegError('A senha deve conter no mínimo 4 caracteres.');
+    if (regPassword.length < 6) {
+      setRegError('A senha deve conter no mínimo 6 caracteres.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const newUser = await registerNewUser(
-        {
-          name: regName,
-          email: regEmail,
-          technique: regTechnique,
-          password: regPassword,
-        },
-        therapists
-      );
-      onLoginSuccess(newUser);
+      const user = await register(regEmail, regPassword, regName);
+      await saveTherapist({
+        id: user.id,
+        name: regName.trim(),
+        email: user.email,
+        role: user.role,
+        technique: regTechnique.trim() || undefined,
+      });
+      onLoginSuccess({ ...user, name: regName.trim(), technique: regTechnique.trim() || undefined });
     } catch (err: any) {
-      setRegError(err.message || 'Erro ao realizar cadastro.');
+      setRegError(friendlyAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -168,12 +121,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
 
   return (
     <div className="min-h-screen bg-[#F7F6F2] flex flex-col justify-center items-center p-4 selection:bg-emerald-100">
-      {/* Container Principal */}
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-[#E8E6DF] overflow-hidden">
-        
-        {/* Topo / Header da Instituição */}
+
         <div className="bg-gradient-to-b from-[#2E3C32] to-[#243027] text-white p-6 sm:p-8 text-center relative overflow-hidden">
-          {/* Círculo sutil de fundo */}
           <div className="absolute -top-16 -right-16 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
 
@@ -194,15 +144,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
             <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 font-medium">
               Agenda & Gestão Integrada de Atendimentos
             </p>
-            
+
             <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-xs">
               <Shield className="w-3.5 h-3.5" />
-              <span>Acesso Individual Seguro com Senha</span>
+              <span>Acesso Individual Seguro</span>
             </div>
           </div>
         </div>
 
-        {/* Abas: Entrar ou Cadastrar */}
         <div className="flex border-b border-[#E8E6DF] bg-[#FAF9F6]">
           <button
             type="button"
@@ -216,7 +165,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
             <UserCheck className="w-4 h-4" />
             <span>Entrar com Senha</span>
           </button>
-          
+
           <button
             type="button"
             onClick={() => { setTab('register'); setRegError(null); }}
@@ -231,13 +180,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
           </button>
         </div>
 
-        {/* Conteúdo da Aba */}
         <div className="p-6 sm:p-7 space-y-5">
-          
-          {/* ABA LOGIN */}
+
           {tab === 'login' && (
             <>
-              {/* Mensagem de Erro */}
               {loginError && (
                 <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in">
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -257,21 +203,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                       required
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="ex: claudirisrael@gmail.com ou acky0608@gmail.com"
+                      placeholder="ex: seu.email@exemplo.com"
+                      autoComplete="email"
                       className="w-full pl-10 pr-3.5 py-2.5 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Sua Senha
-                    </label>
-                    <span className="text-[11px] text-slate-400">
-                      Padrão inicial: <code className="text-emerald-700 font-mono">renovaser123</code>
-                    </span>
-                  </div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Sua Senha
+                  </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
@@ -280,6 +222,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="Digite sua senha de acesso"
+                      autoComplete="current-password"
                       className="w-full pl-10 pr-10 py-2.5 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all placeholder:text-slate-400"
                     />
                     <button
@@ -325,50 +268,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                   <span>{isGoogleLoading ? 'Autenticando com Google...' : 'Entrar com Conta Google'}</span>
                 </button>
               </form>
-
-              {/* Seção de Acesso Rápido para Teste das Funções */}
-              <div className="pt-3 border-t border-[#E8E6DF] space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold tracking-wide uppercase text-slate-500 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-500" />
-                    Selecione para Testar os Papéis:
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  {sampleAccounts.map((acc, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleQuickSelect(acc)}
-                      className="w-full text-left p-2.5 rounded-xl border border-[#E8E6DF] bg-[#FAF9F6] hover:bg-emerald-50 hover:border-emerald-300 transition-all flex items-center justify-between group cursor-pointer"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-800 group-hover:text-emerald-900">
-                            {acc.name}
-                          </span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium border ${acc.badgeColor}`}>
-                            {acc.role === 'admin' ? 'Admin' : 'Terapeuta'}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                          <span>{acc.technique}</span>
-                          <span>•</span>
-                          <span className="font-mono text-[10px] text-slate-400">{acc.email}</span>
-                        </div>
-                      </div>
-                      <div className="text-[10px] font-semibold text-emerald-700 bg-white px-2 py-1 rounded-md border border-[#E8E6DF] group-hover:border-emerald-300">
-                        Preencher
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
           )}
 
-          {/* ABA CADASTRO / PRIMEIRO ACESSO */}
           {tab === 'register' && (
             <>
               {regError && (
@@ -388,7 +290,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                     required
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
-                    placeholder="Ex: Adriana Israel"
+                    placeholder="Ex: Seu Nome"
+                    autoComplete="name"
                     className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all"
                   />
                 </div>
@@ -402,7 +305,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                     required
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="Ex: acky0608@gmail.com"
+                    placeholder="Ex: seu.email@exemplo.com"
+                    autoComplete="email"
                     className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all"
                   />
                 </div>
@@ -430,7 +334,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                       required
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="Mínimo 4 dígitos"
+                      placeholder="Mínimo 6 caracteres"
+                      autoComplete="new-password"
                       className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all"
                     />
                   </div>
@@ -445,6 +350,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
                       value={regConfirmPassword}
                       onChange={(e) => setRegConfirmPassword(e.target.value)}
                       placeholder="Repita a senha"
+                      autoComplete="new-password"
                       className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#D9D6CB] rounded-xl text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all"
                     />
                   </div>
@@ -464,7 +370,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ therapists, onLoginSuc
 
         </div>
 
-        {/* Rodapé Informativo sobre Políticas de Acesso */}
         <div className="p-4 bg-[#FAF9F6] border-t border-[#E8E6DF] text-center text-[11px] text-slate-500">
           <p>
             <strong>Regras de Acesso:</strong> Administradores gerenciam a clínica completa. Terapeutas visualizam e agendam exclusivamente seus próprios atendimentos e clientes.
