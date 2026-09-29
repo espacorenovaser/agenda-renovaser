@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import type { Evento, TherapistUser } from '../types';
 import { getRoomById } from '../lib/roomService';
-import { sanitizeEventTime } from '../lib/firestoreService';
 
 interface DayScheduleViewProps {
   events: Evento[];

@@ -32,35 +32,16 @@ import {
   ExternalLink
 } from 'lucide-react';
 import type { Evento, TherapistUser, RoomId } from './types';
-import { 
-  subscribeToEvents, 
-  saveEvent, 
-  deleteEvent, 
-  subscribeToTherapists, 
-  saveTherapist, 
+import {
+  subscribeToEvents,
+  saveEvent,
+  deleteEvent,
+  subscribeToTherapists,
+  saveTherapist,
   deleteTherapist,
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
-} from './lib/firestoreService';
-import { 
-  initAuth, 
-  googleSignIn, 
-  getAccessToken, 
-  logout as googleLogout 
-} from './lib/firebase';
-import type { User } from 'firebase/auth';
-import { 
-  createGoogleCalendarEvent, 
-  deleteGoogleCalendarEvent, 
-  fetchGoogleCalendarEvents 
-} from './lib/googleCalendarService';
-import { 
-  getRoomById, 
-  checkRoomAvailability, 
-  validateRoomBooking,
-  RENOVASER_ROOMS 
-} from './lib/roomService';
-import { parseAssistantCommand } from './lib/assistantParser';
+} from './lib/supabaseService';
 import { clearLegacyLocalAuth, logout as firebaseLogout, onAuthChange } from './lib/authService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';

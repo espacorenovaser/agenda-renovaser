@@ -1,57 +1,38 @@
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  updatePassword,
-  User as FirebaseUser,
-} from 'firebase/auth';
-import { auth } from './firebase';
+import { supabase } from './supabase';
 import type { TherapistUser } from '../types';
 
-// Chaves legadas removidas — mantidas aqui apenas para limpeza única
-const LEGACY_SESSION_KEYS = [
-  'renovaser_active_user_v4',
-  'renovaser_cached_therapists_v2',
-];
-
-export function clearLegacyLocalAuth(): void {
-  try {
-    for (const key of LEGACY_SESSION_KEYS) {
-      localStorage.removeItem(key);
-    }
-    // Remove qualquer resíduo de senha em caches antigos
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('renovaser_')) {
-        try {
-          const raw = localStorage.getItem(key);
-          if (raw && /password/i.test(raw)) {
-            localStorage.removeItem(key);
-          }
-        } catch {
-          localStorage.removeItem(key);
-        }
-      }
-    }
-  } catch {
-    // localStorage indisponível — nada a limpar
-  }
-}
-
-export function mapFirebaseUserToTherapistUser(fbUser: FirebaseUser): TherapistUser {
+export function mapFirebaseUserToTherapistUser(user: any): TherapistUser {
   return {
-    id: fbUser.uid,
-    name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Usuário',
-    email: fbUser.email || '',
-    role: 'terapeuta',
-    createdAt: fbUser.metadata.creationTime || new Date().toISOString(),
+    id: user.id,
+    name: user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário',
+    email: user.email || '',
+    role: user.user_metadata?.role || 'terapeuta',
+    technique: user.user_metadata?.technique,
+    createdAt: user.created_at,
   };
 }
 
+export function clearLegacyLocalAuth(): void {
+  try {
+    const legacyKeys = ['renovaser_active_user_v4', 'renovaser_cached_therapists_v2'];
+    for (const key of legacyKeys) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // localStorage indisponível
+  }
+}
+
 export async function login(email: string, password: string): Promise<TherapistUser> {
-  const result = await signInWithEmailAndPassword(auth, email.trim(), password);
-  return mapFirebaseUserToTherapistUser(result.user);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) throw error;
+  if (!data.user) throw new Error('Nenhum usuário retornado');
+
+  return mapFirebaseUserToTherapistUser(data.user);
 }
 
 export async function register(
@@ -59,33 +40,44 @@ export async function register(
   password: string,
   displayName?: string
 ): Promise<TherapistUser> {
-  const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
-  return {
-    ...mapFirebaseUserToTherapistUser(result.user),
-    ...(displayName ? { name: displayName.trim() } : {}),
-  };
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        name: displayName,
+      },
+    },
+  });
+
+  if (error) throw error;
+  if (!data.user) throw new Error('Nenhum usuário retornado');
+
+  return mapFirebaseUserToTherapistUser(data.user);
 }
 
 export async function logout(): Promise<void> {
-  clearLegacyLocalAuth();
-  await signOut(auth);
+  await supabase.auth.signOut();
 }
 
 export function onAuthChange(callback: (user: TherapistUser | null) => void) {
-  return onAuthStateChanged(auth, (fbUser) => {
-    callback(fbUser ? mapFirebaseUserToTherapistUser(fbUser) : null);
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    callback(session?.user ? mapFirebaseUserToTherapistUser(session.user) : null);
   });
+
+  return subscription;
 }
 
 export async function changePassword(newPassword: string): Promise<void> {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Nenhum usuário autenticado.');
-  }
-  await updatePassword(currentUser, newPassword);
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+  if (error) throw error;
 }
 
-export function getCurrentUser(): TherapistUser | null {
-  const fbUser = auth.currentUser;
-  return fbUser ? mapFirebaseUserToTherapistUser(fbUser) : null;
+export async function getCurrentUser(): Promise<TherapistUser | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  return mapFirebaseUserToTherapistUser(user);
 }
