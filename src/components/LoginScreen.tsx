@@ -11,7 +11,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import type { TherapistUser } from '../types';
-import { login, register, mapFirebaseUserToTherapistUser } from '../lib/authService';
+import { login, register, mapAuthUserToTherapistUser } from '../lib/authService';
 import { saveTherapist } from '../lib/supabaseService';
 
 interface LoginScreenProps {

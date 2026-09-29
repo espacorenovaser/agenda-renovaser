@@ -80,13 +80,13 @@ export const AuthHelpModal: React.FC<AuthHelpModalProps> = ({
 
             <div className="flex items-start space-x-2">
               <Globe className="w-4 h-4 text-[#5C6B5A] shrink-0 mt-0.5" />
-              <span>
+              <p className="text-[#55554D]">
                 <strong>Em produção no seu domínio oficial:</strong> No seu endereço{' '}
                 <code className="px-1.5 py-0.5 bg-[#EDEBE1] rounded text-[#2E3029] font-mono text-[11px]">
                   agenda.institutorenovaser.com.br
                 </code>
-                , o login com Google funciona sem essa limitação, bastando mantê-lo autorizado no Firebase Console.
-              </span>
+                , o login com Google funciona sem essa limitação, através da autenticação Supabase.
+              </p>
             </div>
           </div>
 
