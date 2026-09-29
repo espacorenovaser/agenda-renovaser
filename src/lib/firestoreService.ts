@@ -31,18 +31,18 @@ export async function testConnection() {
 testConnection().catch(() => {});
 
 export const DEFAULT_THERAPISTS: TherapistUser[] = [
-  { id: 'admin1', name: 'Claudir Israel', email: 'claudirisrael@gmail.com', role: 'admin' },
-  { id: 'admin2', name: 'Maria Gorete', email: 'mmgorete00@gmail.com', role: 'admin' },
-  { id: 'admin3', name: 'Cleci Marchioro', email: 'clecimarchioro@gmail.com', role: 'admin' },
-  { id: 'admin4', name: 'Espaço RenovaSer', email: 'espacorenovaser@gmail.com', role: 'admin' },
-  { id: 'terapeuta1', name: 'Dr. Lucas', email: 'lucas.psico@institutorenovaser.com.br', role: 'terapeuta', technique: 'Psicoterapia' },
-  { id: 'terapeuta2', name: 'Adriana Israel', email: 'acky0608@gmail.com', role: 'terapeuta', technique: 'Tarô' }
+  { id: 'admin1', name: 'Administrador RenovaSer', email: 'admin.renovaser@exemplo.com', role: 'admin' },
+  { id: 'admin2', name: 'Maria Gestora', email: 'admin2.renovaser@exemplo.com', role: 'admin' },
+  { id: 'admin3', name: 'Cleci Coordenadora', email: 'admin3.renovaser@exemplo.com', role: 'admin' },
+  { id: 'admin4', name: 'Espaço Exemplo', email: 'espaco.exemplo@exemplo.com', role: 'admin' },
+  { id: 'terapeuta1', name: 'Dr. Lucas Silva', email: 'terapeuta.silva@exemplo.com', role: 'terapeuta', technique: 'Psicoterapia' },
+  { id: 'terapeuta2', name: 'Dra. Adriana Souza', email: 'terapeuta.souza@exemplo.com', role: 'terapeuta', technique: 'Tarô' }
 ];
 
 export const DEFAULT_EVENTS: Evento[] = [
   {
     id: 'evt-1',
-    title: 'Atendimento Clínico - Dr. Lucas',
+    title: 'Atendimento Clínico - Dr. Lucas Silva',
     category: 'atendimento',
     time: '14:00 - 15:00',
     date: new Date().toISOString().split('T')[0],
@@ -51,7 +51,7 @@ export const DEFAULT_EVENTS: Evento[] = [
     roomId: 'sala_1',
     roomName: 'Sala 1 • Harmonia',
     therapistId: 'terapeuta1',
-    clientEmail: 'cliente@exemplo.com',
+    clientEmail: 'cliente.teste@exemplo.com',
     clientWhatsApp: '(11) 98765-4321',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     createdAt: new Date().toISOString()
