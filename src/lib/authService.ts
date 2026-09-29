@@ -39,20 +39,12 @@ export function clearLegacyLocalAuth(): void {
   }
 }
 
-// Mapeamento de e-mails para papéis enquanto não há coleção de perfis
-const ADMIN_EMAILS = [
-  'claudirisrael@gmail.com',
-  'mmgorete00@gmail.com',
-  'clecimarchioro@gmail.com',
-  'espacorenovaser@gmail.com',
-];
-
 export function mapFirebaseUserToTherapistUser(fbUser: FirebaseUser): TherapistUser {
   return {
     id: fbUser.uid,
     name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Usuário',
     email: fbUser.email || '',
-    role: ADMIN_EMAILS.includes(fbUser.email?.toLowerCase() || '') ? 'admin' : 'terapeuta',
+    role: 'terapeuta',
     createdAt: fbUser.metadata.creationTime || new Date().toISOString(),
   };
 }
