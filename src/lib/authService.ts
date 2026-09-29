@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import type { TherapistUser } from '../types';
 
-export function mapFirebaseUserToTherapistUser(user: any): TherapistUser {
+export function mapAuthUserToTherapistUser(user: any): TherapistUser {
   return {
     id: user.id,
     name: user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário',
@@ -32,7 +32,7 @@ export async function login(email: string, password: string): Promise<TherapistU
   if (error) throw error;
   if (!data.user) throw new Error('Nenhum usuário retornado');
 
-  return mapFirebaseUserToTherapistUser(data.user);
+  return mapAuthUserToTherapistUser(data.user);
 }
 
 export async function register(
@@ -53,7 +53,7 @@ export async function register(
   if (error) throw error;
   if (!data.user) throw new Error('Nenhum usuário retornado');
 
-  return mapFirebaseUserToTherapistUser(data.user);
+  return mapAuthUserToTherapistUser(data.user);
 }
 
 export async function logout(): Promise<void> {
@@ -62,7 +62,7 @@ export async function logout(): Promise<void> {
 
 export function onAuthChange(callback: (user: TherapistUser | null) => void) {
   const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    callback(session?.user ? mapFirebaseUserToTherapistUser(session.user) : null);
+    callback(session?.user ? mapAuthUserToTherapistUser(session.user) : null);
   });
 
   return subscription;
@@ -79,5 +79,5 @@ export async function getCurrentUser(): Promise<TherapistUser | null> {
 
   if (!user) return null;
 
-  return mapFirebaseUserToTherapistUser(user);
+  return mapAuthUserToTherapistUser(user);
 }

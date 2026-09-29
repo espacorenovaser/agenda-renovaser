@@ -42,7 +42,7 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
-import { clearLegacyLocalAuth, logout as firebaseLogout, onAuthChange } from './lib/authService';
+import { clearLegacyLocalAuth, logout, onAuthChange } from './lib/authService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
@@ -54,7 +54,7 @@ import { RoomSelector } from './components/RoomSelector';
 import { RoomsOccupancyBar } from './components/RoomsOccupancyBar';
 
 export default function Dashboard() {
-  // --- ESTADO DE AUTENTICAÇÃO E SESSÃO (Firebase Auth como fonte única) ---
+  // --- AUTENTICAÇÃO E SESSÃO (Supabase Auth como fonte única) ---
   const [currentUser, setCurrentUser] = useState<TherapistUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
@@ -68,7 +68,7 @@ export default function Dashboard() {
     return () => unsub();
   }, []);
 
-  // --- ESTADOS DO FIRESTORE ---
+  // --- DADOS DE EVENTOS E TERAPEUTAS (Supabase) ---
   const [events, setEvents] = useState<Evento[]>(DEFAULT_EVENTS);
   const [therapists, setTherapists] = useState<TherapistUser[]>(DEFAULT_THERAPISTS);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
@@ -104,7 +104,7 @@ export default function Dashboard() {
     clientWhatsApp: ''
   });
 
-  // --- FORMULÁRIO DE NOVO UTILIZADOR (perfil Firestore; credencial fica no Firebase Auth) ---
+  // --- FORMULÁRIO DE NOVO UTILIZADOR (perfil Supabase; credencial gerida por Supabase Auth) ---
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
@@ -216,7 +216,7 @@ export default function Dashboard() {
         setIsLoadingEvents(false);
       },
       (error) => {
-        console.warn('Erro ao carregar eventos do Firestore:', error);
+        console.warn('Erro ao carregar eventos do Supabase:', error);
         setIsLoadingEvents(false);
       }
     );
@@ -227,7 +227,7 @@ export default function Dashboard() {
         setIsLoadingTherapists(false);
       },
       (error) => {
-        console.warn('Erro ao carregar terapeutas do Firestore:', error);
+        console.warn('Erro ao carregar terapeutas do Supabase:', error);
         setIsLoadingTherapists(false);
       }
     );
@@ -427,7 +427,7 @@ export default function Dashboard() {
     }
   };
 
-  // --- LÓGICA DE CADASTRO DE UTILIZADOR (perfil; senha gerida no Firebase Auth) ---
+  // --- LÓGICA DE CADASTRO DE UTILIZADOR (perfil; senha gerida por Supabase Auth) ---
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name.trim() || !newUser.email.trim()) return;
@@ -684,7 +684,7 @@ export default function Dashboard() {
     );
   }
 
-  // TELA DE LOGIN OBRIGATÓRIA: SE NÃO HOUVER USUÁRIO AUTENTICADO NO FIREBASE
+  // TELA DE LOGIN OBRIGATÓRIA: SE NÃO HOUVER USUÁRIO AUTENTICADO NO SUPABASE
   if (!currentUser) {
     return (
       <LoginScreen
@@ -788,7 +788,7 @@ export default function Dashboard() {
               onClick={async () => {
                 clearLegacyLocalAuth();
                 try {
-                  await firebaseLogout();
+                  await logout();
                 } finally {
                   setCurrentUser(null);
                   showNotification('Sessão encerrada com sucesso.');
@@ -1573,7 +1573,7 @@ export default function Dashboard() {
                 </select>
               </div>
               <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                O acesso é criado na tela de login (Primeiro Acesso) com e-mail e senha via Firebase Auth. Nenhuma senha é guardada aqui.
+                O acesso é criado na tela de login (Primeiro Acesso) com e-mail e senha via Supabase Auth. Nenhuma senha é guardada aqui.
               </p>
               <div className="pt-3 flex justify-end gap-2">
                 <button 
