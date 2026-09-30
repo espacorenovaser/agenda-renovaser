@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Calendar as CalendarIcon, 
-  Plus, 
-  Users, 
-  Video, 
-  MapPin, 
-  Clock, 
-  MessageSquare, 
+import {
+  Calendar as CalendarIcon,
+  Plus,
+  Users,
+  Video,
+  MapPin,
+  Clock,
+  MessageSquare,
   ChevronRight,
   Sparkles,
   UserPlus,
@@ -42,12 +42,12 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
-import { clearLegacyLocalAuth, logout, onAuthChange } from './lib/authService';
-import { googleSignIn, googleLogout, getAccessToken } from './lib/googleAuthService';
-import type { GoogleUser } from './lib/googleAuthService';
-import { createGoogleCalendarEvent, deleteGoogleCalendarEvent, fetchGoogleCalendarEvents } from './lib/googleCalendarService';
+import { clearLegacyLocalAuth, logout, onAuthChange, getCurrentUser } from './lib/authService';
 import { parseAssistantCommand } from './lib/assistantParser';
 import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
+import { initAuth, googleSignIn, googleLogout, getAccessToken } from './lib/google-calendar-auth';
+import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './lib/google-calendar-service';
+import type { GoogleUser } from './lib/google-calendar-auth';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
@@ -66,11 +66,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     clearLegacyLocalAuth();
-    const unsub = onAuthChange((user) => {
+    const subscription = onAuthChange((user) => {
       setCurrentUser(user);
       setIsAuthLoading(false);
     });
-    return () => unsub();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // --- DADOS DE EVENTOS E TERAPEUTAS (Supabase) ---
@@ -314,10 +316,10 @@ export default function Dashboard() {
       let googleEventId: string | undefined = undefined;
       let googleHtmlLink: string | undefined = undefined;
 
-      const activeToken = googleToken || await getAccessToken();
+      const activeToken = googleToken ?? undefined;
       if (activeToken) {
         try {
-          const gcalRes = await createGoogleCalendarEvent({
+          const gcalRes = await createGoogleCalendarEvent(activeToken, {
             title: newEvent.title.trim(),
             category: newEvent.category,
             date: newEvent.date,
@@ -326,9 +328,9 @@ export default function Dashboard() {
             roomName: roomLabel,
             clientEmail: newEvent.clientEmail.trim(),
             clientWhatsApp: newEvent.clientWhatsApp.trim(),
-          }, activeToken);
-          googleEventId = gcalRes.googleEventId;
-          googleHtmlLink = gcalRes.htmlLink;
+          } as Evento);
+          googleEventId = gcalRes?.googleEventId;
+          googleHtmlLink = gcalRes?.htmlLink;
         } catch (gcalErr) {
           console.warn('Não foi possível gravar no Google Agenda:', gcalErr);
         }
@@ -523,7 +525,7 @@ export default function Dashboard() {
     if (parsed.isBooking && parsed.items.length > 0) {
       try {
         const savedTitles: string[] = [];
-        const activeToken = googleToken || await getAccessToken();
+        const activeToken = googleToken ?? undefined;
         let anyGcalSuccess = false;
 
         for (const item of parsed.items) {
@@ -532,16 +534,16 @@ export default function Dashboard() {
 
           if (activeToken) {
             try {
-              const gcalRes = await createGoogleCalendarEvent({
+              const gcalRes = await createGoogleCalendarEvent(activeToken, {
                 title: item.title,
                 category: item.category,
                 date: item.date,
                 time: item.time,
                 location: item.location,
                 roomName: item.roomName,
-              }, activeToken);
-              googleEventId = gcalRes.googleEventId;
-              googleHtmlLink = gcalRes.htmlLink;
+              } as Evento);
+              googleEventId = gcalRes?.googleEventId;
+              googleHtmlLink = gcalRes?.htmlLink;
               anyGcalSuccess = true;
             } catch (gcalErr) {
               console.warn('Erro ao criar no Google Agenda:', gcalErr);
