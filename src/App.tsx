@@ -44,6 +44,7 @@ import {
 } from './lib/supabaseService';
 import { clearLegacyLocalAuth, logout, onAuthChange, signInWithGoogleCalendar } from './lib/authService';
 import { parseAssistantCommand } from './lib/assistantParser';
+import { analyzeIntent } from './lib/assistantAI';
 import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
 import { initAuth, getAccessToken } from './lib/google-calendar-auth';
 import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './lib/googleCalendarService';
@@ -498,31 +499,6 @@ export default function Dashboard() {
     setChatMessages((prev) => [...prev, { sender: 'user', text: userMsg }]);
     setChatInput('');
 
-    const lower = userMsg.toLowerCase();
-
-    // Tratamento especial para mensagens genéricas como "marcar horário"
-    const isGenericBooking = 
-      lower === 'marcar horário' || 
-      lower === 'marcar horario' || 
-      lower === 'agendar' || 
-      lower === 'novo agendamento' || 
-      lower === 'agendar horário' || 
-      lower === 'agendar horario';
-
-    if (isGenericBooking) {
-      setTimeout(() => {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: 'Com certeza! Você pode clicar no botão abaixo para abrir o formulário completo de agendamento ou me dizer os detalhes como: "Agendar atendimento amanhã às 14h na Sala 1".',
-            action: 'open_modal'
-          }
-        ]);
-      }, 300);
-      return;
-    }
-
     // Processamento inteligente do comando com suporte a múltiplas salas e intervalos de horário
     const parsed = parseAssistantCommand(userMsg, events, therapists);
 
@@ -626,16 +602,32 @@ export default function Dashboard() {
         ]);
       }
     } else {
-      setTimeout(() => {
+      // Sem agendamento detectado: chama IA (OpenRouter) para resposta contextual
+      try {
+        const aiResponse = await analyzeIntent(userMsg, currentUser, { events: filteredEvents, therapists });
+        let replyText = aiResponse.suggestedResponse || 'Como posso ajudar na agenda hoje?';
+        if (aiResponse.type === 'booking' && aiResponse.bookingItems && aiResponse.bookingItems.length > 0) {
+          replyText += '\n\nClique em "Marcar horário" para confirmar.';
+        }
         setChatMessages((prev) => [
           ...prev,
           {
             sender: 'assistant',
-            text: `Recebi sua mensagem! Como não identifiquei o dia ou horário exato na mensagem, você pode me informar os detalhes (ex: "Agendar dia 26/09 às 15h na Sala 2") ou clicar no botão abaixo para abrir o formulário já com a seleção das salas:`,
+            text: replyText,
+            action: aiResponse.type === 'booking' ? 'open_modal' : undefined
+          }
+        ]);
+      } catch (e) {
+        console.warn('AI fallback:', e);
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: 'assistant',
+            text: 'Recebi sua mensagem! Para agendar, diga algo como "Agendar atendimento amanhã às 14h na Sala 1".',
             action: 'open_modal'
           }
         ]);
-      }, 350);
+      }
     }
   };
 
