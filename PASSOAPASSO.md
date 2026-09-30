@@ -80,3 +80,22 @@ Mais informações:
 - Documentação Supabase: https://supabase.com/docs
 - Documentação OpenRouter: https://openrouter.ai/docs
 - Guia de Modelos Gratuitos: https://openrouter.ai/models?filter=free
+
+6. Google OAuth + Google Agenda (login e sincronização)
+
+6.1. Google Cloud Console — tela de consentimento OAuth:
+- Acesse https://console.cloud.google.com > APIs e serviços > Tela de consentimento OAuth
+- Tipo de usuário: Externo; preencha nome do app, e-mail de suporte e domínio
+- Em "Escopos", adicione:
+  - https://www.googleapis.com/auth/calendar.events
+  - https://www.googleapis.com/auth/calendar
+- Adicione os e-mails dos terapeutas como usuários de teste (enquanto o app estiver em modo de teste)
+- Ative a Google Calendar API em APIs e serviços > Biblioteca > "Google Calendar API" > Ativar
+
+6.2. Supabase Dashboard — ativar provedor Google:
+- Acesse https://supabase.com/dashboard > seu projeto > Authentication > Providers > Google
+- Ative o provedor e informe o Client ID e o Client Secret (criados em Google Cloud Console > APIs e serviços > Credenciais > Criar credencial > ID do cliente OAuth)
+- Copie o Redirect URI exibido no painel do Supabase (formato https://<projeto>.supabase.co/auth/v1/callback)
+- No Google Cloud Console, na credencial OAuth criada, cadastre esse Redirect URI em "URIs de redirecionamento autorizados"
+- No Supabase Dashboard > Authentication > URL Configuration, configure Site URL e Redirect URLs com o endereço do app (local: http://localhost:5173; produção: seu domínio — o login usa `redirectTo: window.location.origin`)
+- O app já envia os escopos da Agenda e `redirectTo: window.location.origin` no `signInWithOAuth`, e lê o `provider_token` da sessão Supabase (com fallback em `localStorage`) para criar, editar e excluir eventos no Google Agenda

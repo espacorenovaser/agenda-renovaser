@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { clearStoredToken } from './google-calendar-token';
 import type { TherapistUser } from '../types';
 
 export function mapAuthUserToTherapistUser(user: any): TherapistUser {
@@ -57,7 +58,23 @@ export async function register(
 }
 
 export async function logout(): Promise<void> {
-  await supabase.auth.signOut();
+  try {
+    await supabase.auth.signOut();
+  } finally {
+    clearStoredToken();
+  }
+}
+
+export async function signInWithGoogleCalendar(): Promise<void> {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      scopes: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar',
+      redirectTo: window.location.origin,
+      queryParams: { access_type: 'offline', prompt: 'consent' },
+    },
+  });
+  if (error) throw error;
 }
 
 export function onAuthChange(callback: (user: TherapistUser | null) => void) {

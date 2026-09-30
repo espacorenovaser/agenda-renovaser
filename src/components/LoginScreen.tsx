@@ -11,7 +11,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import type { TherapistUser } from '../types';
-import { login, register, mapAuthUserToTherapistUser } from '../lib/authService';
+import { login, register, mapAuthUserToTherapistUser, signInWithGoogleCalendar } from '../lib/authService';
 import { saveTherapist } from '../lib/supabaseService';
 
 interface LoginScreenProps {
@@ -70,8 +70,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setIsGoogleLoading(true);
     setLoginError(null);
     try {
-      setLoginError('Google login será integrado em breve com Supabase OAuth.');
-    } finally {
+      await signInWithGoogleCalendar(); // redireciona ao Google
+    } catch (err: any) {
+      setLoginError(friendlyAuthError(err));
       setIsGoogleLoading(false);
     }
   };
