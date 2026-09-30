@@ -80,12 +80,16 @@ Always respond with valid JSON.`;
         suggestedResponse: assistantMessage
       };
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error analyzing intent:', error);
+    // Se for erro de auth (401/403), não logar como erro crítico
+    if (error?.isAuthError) {
+      console.warn('OpenRouter auth error (401/403) - falling back to local response');
+    }
     return {
       type: 'query',
       confidence: 0,
-      suggestedResponse: 'Desculpe, houve um erro ao processar sua mensagem.'
+      suggestedResponse: 'Desculpe, o serviço de IA está indisponível no momento. Para agendar, diga algo como "Agendar atendimento amanhã às 14h na Sala 1".'
     };
   }
 }
@@ -122,10 +126,13 @@ export async function fetchAssistantCompletion(
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(
-      errorData.error || `OpenRouter API error: ${response.status}`
-    );
+    const errorData = await response.json().catch(() => ({}));
+    const err = new Error(
+      errorData.error || errorData.message || `OpenRouter API error: ${response.status}`
+    ) as Error & { status?: number; isAuthError?: boolean };
+    err.status = response.status;
+    err.isAuthError = response.status === 401 || response.status === 403;
+    throw err;
   }
 
   return response.json();
