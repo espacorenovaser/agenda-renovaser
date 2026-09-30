@@ -79,10 +79,18 @@ Regras:
 
     try {
       const parsed = JSON.parse(assistantMessage);
+      let response = parsed.suggestedResponse || '';
+      // Se o modelo colocou JSON inteiro no suggestedResponse, extrair o campo real
+      if (response.trim().startsWith('{')) {
+        try {
+          const inner = JSON.parse(response);
+          response = inner.suggestedResponse || response;
+        } catch {}
+      }
       return {
         type: parsed.type || 'other',
         confidence: parsed.confidence || 0,
-        suggestedResponse: parsed.suggestedResponse,
+        suggestedResponse: response,
         requiresConfirmation: parsed.requiresConfirmation
       };
     } catch {
