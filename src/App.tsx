@@ -498,37 +498,112 @@ export default function Dashboard() {
     setChatMessages((prev) => [...prev, { sender: 'user', text: userMsg }]);
     setChatInput('');
 
-    // Processamento inteligente do comando com suporte a múltiplas salas e intervalos de horário
-    const parsed = parseAssistantCommand(userMsg, events, therapists);
+    // SEMPRE chama a IA (RenovaBot) para responder
+    try {
+      const aiResponse = await analyzeIntent(userMsg, currentUser, { events: filteredEvents, therapists });
+      const replyText = aiResponse.suggestedResponse || 'Como posso ajudar na agenda hoje? 😊';
 
-    if (parsed.isBooking && parsed.items.length > 0) {
-      try {
-        const savedTitles: string[] = [];
-        const activeToken = googleToken ?? undefined;
-        let anyGcalSuccess = false;
+      // Se a IA detectou agendamento E temos itens parseados localmente, cria os eventos
+      const parsed = parseAssistantCommand(userMsg, events, therapists);
+      let anyGcalSuccess = false;
 
-        for (const item of parsed.items) {
-          let googleEventId: string | undefined = undefined;
-          let googleHtmlLink: string | undefined = undefined;
+      if (aiResponse.type === 'booking' && parsed.isBooking && parsed.items.length > 0) {
+        try {
+          const activeToken = googleToken ?? undefined;
 
-          if (activeToken) {
-            try {
-              const gcalRes = await createGoogleCalendarEvent({
-                title: item.title,
-                category: item.category,
-                date: item.date,
-                time: item.time,
-                location: item.location,
-                roomName: item.roomName,
-              } as Evento, activeToken);
-              googleEventId = gcalRes?.googleEventId;
-              googleHtmlLink = gcalRes?.htmlLink;
-              anyGcalSuccess = true;
-            } catch (gcalErr) {
-              console.warn('Erro ao criar no Google Agenda:', gcalErr);
+          for (const item of parsed.items) {
+            let googleEventId: string | undefined = undefined;
+            let googleHtmlLink: string | undefined = undefined;
+
+            if (activeToken) {
+              try {
+                const gcalRes = await createGoogleCalendarEvent({
+                  title: item.title,
+                  category: item.category,
+                  date: item.date,
+                  time: item.time,
+                  location: item.location,
+                  roomName: item.roomName,
+                } as Evento, activeToken);
+                googleEventId = gcalRes?.googleEventId;
+                googleHtmlLink = gcalRes?.htmlLink;
+                anyGcalSuccess = true;
+              } catch (gcalErr) {
+                console.warn('Erro ao criar no Google Agenda:', gcalErr);
+              }
             }
+
+            const newEvt: Omit<Evento, 'id'> = {
+              title: item.title,
+              category: item.category,
+              time: item.time,
+              date: item.date,
+              location: item.location,
+              type: item.type,
+              roomId: item.roomId,
+              roomName: item.roomName,
+              therapistId: item.therapistId,
+              clientEmail: '',
+              clientWhatsApp: '',
+              badgeColor: item.category === 'reuniao'
+                ? 'bg-blue-100 text-blue-800 border-blue-200'
+                : item.category === 'evento'
+                ? 'bg-purple-100 text-purple-800 border-purple-200'
+                : 'bg-emerald-100 text-emerald-800 border-emerald-200',
+              createdAt: new Date().toISOString(),
+              googleEventId,
+              googleHtmlLink,
+              syncedWithGoogle: !!googleEventId
+            };
+
+            await saveEvent(newEvt);
           }
 
+          const gcalNotice = anyGcalSuccess
+            ? '\n\n📅 Sincronizado e salvo diretamente no Google Agenda!'
+            : (!activeToken ? '\n\n💡 Dica: Conecte sua conta do Google Agenda no topo da página para salvar seus agendamentos diretamente no calendário Google.' : '');
+
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: 'assistant',
+              text: `${replyText}${gcalNotice}`,
+              action: 'open_modal'
+            }
+          ]);
+
+          if (parsed.items.length > 1) {
+            showNotification(`${parsed.items.length} agendamentos registrados com sucesso!`);
+          } else {
+            showNotification(parsed.items[0].type === 'online' ? 'Reunião online registrada na agenda!' : 'Compromisso registrado na agenda e sala reservada!');
+          }
+        } catch (err: any) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              sender: 'assistant',
+              text: `${replyText}\n\n⚠️ Ocorreu uma falha ao salvar: ${err.message || err}.`
+            }
+          ]);
+        }
+      } else {
+        // Resposta normal da IA (não é agendamento ou não confirmado)
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: 'assistant',
+            text: replyText,
+            action: aiResponse.type === 'booking' ? 'open_modal' : undefined
+          }
+        ]);
+      }
+    } catch (e) {
+      console.warn('AI fallback:', e);
+      // Fallback local se IA falhar completamente
+      const parsed = parseAssistantCommand(userMsg, events, therapists);
+      if (parsed.isBooking && parsed.items.length > 0) {
+        // Mesma lógica de criação de eventos...
+        for (const item of parsed.items) {
           const newEvt: Omit<Evento, 'id'> = {
             title: item.title,
             category: item.category,
@@ -547,82 +622,24 @@ export default function Dashboard() {
               ? 'bg-purple-100 text-purple-800 border-purple-200'
               : 'bg-emerald-100 text-emerald-800 border-emerald-200',
             createdAt: new Date().toISOString(),
-            googleEventId,
-            googleHtmlLink,
-            syncedWithGoogle: !!googleEventId
+            syncedWithGoogle: false
           };
-
           await saveEvent(newEvt);
-          savedTitles.push(`${item.roomName || item.location}: ${item.title}`);
         }
-
-        const firstItem = parsed.items[0];
-        const [year, month, day] = firstItem.date.split('-');
-        const formattedDate = day && month && year ? `${day}/${month}/${year}` : firstItem.date;
-        const gcalNotice = anyGcalSuccess
-          ? '\n\n📅 Sincronizado e salvo diretamente no Google Agenda!'
-          : (!activeToken ? '\n\n💡 Dica: Conecte sua conta do Google Agenda no topo da página para salvar seus agendamentos diretamente no calendário Google.' : '');
-
-        if (parsed.items.length > 1) {
-          const summaryList = parsed.items
-            .map((it) => `• ${it.roomName || it.location}: "${it.title}"`)
-            .join('\n');
-
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: 'assistant',
-              text: `Perfeito! Agendei e reservei na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!${gcalNotice}`
-            }
-          ]);
-          showNotification(`${parsed.items.length} agendamentos registrados com sucesso!`);
-        } else {
-          const isItemOnline = firstItem.type === 'online';
-          const msgText = isItemOnline
-            ? `Perfeito! Agendei a reunião online: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} (Modalidade: Online - Google Meet). Espaços físicos liberados.${gcalNotice}`
-            : `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!${gcalNotice}`;
-
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: 'assistant',
-              text: msgText
-            }
-          ]);
-          showNotification(isItemOnline ? 'Reunião online registrada na agenda!' : 'Compromisso registrado na agenda e sala reservada!');
-        }
-      } catch (err: any) {
         setChatMessages((prev) => [
           ...prev,
           {
             sender: 'assistant',
-            text: `Ocorreu uma falha ao salvar na agenda: ${err.message || err}. Por favor, tente novamente.`
+            text: `Perfeito! Agendei ${parsed.items.length} atendimento(s). ${parsed.items.length > 1 ? 'Todos os espaços foram reservados!' : ''}`,
+            action: 'open_modal'
           }
         ]);
-      }
-    } else {
-      // Sem agendamento detectado: chama IA (OpenRouter) para resposta contextual
-      try {
-        const aiResponse = await analyzeIntent(userMsg, currentUser, { events: filteredEvents, therapists });
-        let replyText = aiResponse.suggestedResponse || 'Como posso ajudar na agenda hoje?';
-        if (aiResponse.type === 'booking' && aiResponse.bookingItems && aiResponse.bookingItems.length > 0) {
-          replyText += '\n\nClique em "Marcar horário" para confirmar.';
-        }
+      } else {
         setChatMessages((prev) => [
           ...prev,
           {
             sender: 'assistant',
-            text: replyText,
-            action: aiResponse.type === 'booking' ? 'open_modal' : undefined
-          }
-        ]);
-      } catch (e) {
-        console.warn('AI fallback:', e);
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: 'Recebi sua mensagem! Para agendar, diga algo como "Agendar atendimento amanhã às 14h na Sala 1".',
+            text: 'Olá! Sou o RenovaBot 🤖 Como posso ajudar na agenda hoje? Para agendar, diga algo como "Agendar atendimento amanhã às 14h na Sala 1".',
             action: 'open_modal'
           }
         ]);
