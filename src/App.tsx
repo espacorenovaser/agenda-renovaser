@@ -500,7 +500,7 @@ export default function Dashboard() {
 
     // SEMPRE chama a IA (RenovaBot) para responder
     try {
-      const aiResponse = await analyzeIntent(userMsg, currentUser, { events: filteredEvents, therapists });
+      const aiResponse = await analyzeIntent(userMsg, currentUser, { events: filteredEvents, therapists }, chatMessages);
       const replyText = aiResponse.suggestedResponse || 'Como posso ajudar na agenda hoje? 😊';
 
       // Se a IA detectou agendamento E temos itens parseados localmente, cria os eventos
