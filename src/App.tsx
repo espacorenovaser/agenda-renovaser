@@ -142,22 +142,6 @@ export default function Dashboard() {
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
 
-  useEffect(() => {
-    const unsubGoogleAuth = initAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
-      },
-      () => {
-        setGoogleUser(null);
-        setGoogleToken(null);
-      }
-    );
-    return () => {
-      unsubGoogleAuth();
-    };
-  }, []);
-
   const handleConnectGoogle = async () => {
     setIsConnectingGoogle(true);
     try {
@@ -215,11 +199,11 @@ export default function Dashboard() {
     }
   };
 
-  // --- INSCRIÇÃO EM TEMPO REAL NO FIRESTORE ---
+  // --- INSCRIÇÃO EM TEMPO REAL NO SUPABASE ---
   useEffect(() => {
     const unsubEvents = subscribeToEvents(
-      (firestoreEvents) => {
-        setEvents(firestoreEvents);
+      (supabaseEvents) => {
+        setEvents(supabaseEvents);
         setIsLoadingEvents(false);
       },
       (error) => {
@@ -229,8 +213,8 @@ export default function Dashboard() {
     );
 
     const unsubTherapists = subscribeToTherapists(
-      (firestoreTherapists) => {
-        setTherapists(firestoreTherapists);
+      (supabaseTherapists) => {
+        setTherapists(supabaseTherapists);
         setIsLoadingTherapists(false);
       },
       (error) => {

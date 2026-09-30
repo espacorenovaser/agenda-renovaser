@@ -52,6 +52,12 @@ export function setCachedLocalTherapists(therapists: TherapistUser[]): void {
   }
 }
 
+async function fetchEvents(): Promise<any[]> {
+  const { data, error } = await supabase.from('events').select('*').order('start_time', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 export function subscribeToEvents(
   callback: (events: any[]) => void,
   onError?: (err: any) => void
@@ -59,23 +65,39 @@ export function subscribeToEvents(
   const localInitial = getCachedLocalEvents();
   if (localInitial.length > 0) callback(localInitial);
 
-  supabase
+  let cancelled = false;
+  fetchEvents()
+    .then((data) => {
+      if (cancelled) return;
+      setCachedLocalEvents(data);
+      callback(data);
+    })
+    .catch((err: any) => {
+      console.warn('Erro ao carregar eventos do Supabase:', err);
+      if (onError) onError(err);
+      if (!cancelled) callback(getCachedLocalEvents());
+    });
+
+  const channel = supabase
     .channel('events-all')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => {
       try {
-        const { data, error } = await supabase.from('events').select('*').order('start_time', { ascending: true });
-        if (error) throw error;
-        setCachedLocalEvents(data || []);
-        callback(data || []);
+        const data = await fetchEvents();
+        if (cancelled) return;
+        setCachedLocalEvents(data);
+        callback(data);
       } catch (err: any) {
         console.warn('Erro ao sincronizar eventos:', err);
         if (onError) onError(err);
-        callback(getCachedLocalEvents());
+        if (!cancelled) callback(getCachedLocalEvents());
       }
     })
     .subscribe();
 
-  return () => {};
+  return () => {
+    cancelled = true;
+    supabase.removeChannel(channel);
+  };
 }
 
 export async function saveEvent(event: any): Promise<string> {
@@ -105,6 +127,19 @@ export async function deleteEvent(eventId: string): Promise<void> {
   }
 }
 
+async function fetchTherapists(): Promise<TherapistUser[]> {
+  const { data, error } = await supabase.from('profiles').select('*');
+  if (error) throw error;
+  return (data || []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    email: p.email,
+    role: p.role || 'terapeuta',
+    technique: '',
+    createdAt: p.created_at,
+  }));
+}
+
 export function subscribeToTherapists(
   callback: (therapists: TherapistUser[]) => void,
   onError?: (err: any) => void
@@ -112,31 +147,39 @@ export function subscribeToTherapists(
   const localInitial = getCachedLocalTherapists();
   if (localInitial.length > 0) callback(localInitial);
 
-  supabase
+  let cancelled = false;
+  fetchTherapists()
+    .then((therapists) => {
+      if (cancelled) return;
+      setCachedLocalTherapists(therapists);
+      callback(therapists);
+    })
+    .catch((err: any) => {
+      console.warn('Erro ao carregar terapeutas do Supabase:', err);
+      if (onError) onError(err);
+      if (!cancelled) callback(getCachedLocalTherapists());
+    });
+
+  const channel = supabase
     .channel('profiles-all')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
       try {
-        const { data, error } = await supabase.from('profiles').select('*');
-        if (error) throw error;
-        const therapists = (data || []).map((p) => ({
-          id: p.id,
-          name: p.name,
-          email: p.email,
-          role: p.role || 'terapeuta',
-          technique: '',
-          createdAt: p.created_at,
-        }));
+        const therapists = await fetchTherapists();
+        if (cancelled) return;
         setCachedLocalTherapists(therapists);
         callback(therapists);
       } catch (err: any) {
         console.warn('Erro ao sincronizar terapeutas:', err);
         if (onError) onError(err);
-        callback(getCachedLocalTherapists());
+        if (!cancelled) callback(getCachedLocalTherapists());
       }
     })
     .subscribe();
 
-  return () => {};
+  return () => {
+    cancelled = true;
+    supabase.removeChannel(channel);
+  };
 }
 
 export async function saveTherapist(therapist: any): Promise<string> {
