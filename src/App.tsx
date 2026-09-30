@@ -21,7 +21,6 @@ import {
   MessageCircle,
   Phone,
   Bell,
-  BarChart3,
   LogOut,
   KeyRound,
   Shield,
@@ -786,14 +785,6 @@ export default function Dashboard() {
             >
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Sair</span>
-            </button>
-
-            <button
-              onClick={scrollToSummary}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
-            >
-              <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span className="hidden lg:inline">Resumo</span>
             </button>
 
             {/* Botão de Cadastrar Utilizador: Exclusivo para Administradores */}
