@@ -87,6 +87,17 @@ Regras:
           response = inner.suggestedResponse || response;
         } catch {}
       }
+      // Se ainda vier JSON como string (ex: com code fences), tentar extrair
+      if (response.trim().startsWith('{') || response.trim().startsWith('```')) {
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const inner = JSON.parse(jsonMatch[0]);
+            response = inner.suggestedResponse || response;
+          } catch {}
+        }
+      }
+      console.debug('[analyzeIntent] extracted response:', response.substring(0, 100));
       return {
         type: parsed.type || 'other',
         confidence: parsed.confidence || 0,
