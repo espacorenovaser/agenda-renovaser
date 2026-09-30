@@ -40,7 +40,8 @@ export interface AnalysisIntent {
 export async function analyzeIntent(
   message: string,
   user?: any,
-  context?: any
+  context?: any,
+  history?: Array<{ sender: 'user' | 'assistant'; text: string }>
 ): Promise<AnalysisIntent> {
   const systemPrompt = `Você é o RenovaBot, assistente virtual do Instituto RenovaSer.
 Responda SEMPRE em português brasileiro, de forma acolhedora e profissional.
@@ -53,10 +54,17 @@ Regras:
 - Seja caloroso, use emojis ocasionais
 - Nome: RenovaBot`;
 
+  // Build conversation history for context (last 10 messages)
+  const historyMessages = (history || []).slice(-10).map(h => ({
+    role: h.sender === 'user' ? 'user' : 'assistant',
+    content: h.text
+  }));
+
   try {
     const response = await fetchAssistantCompletion(
       [
         { role: 'system', content: systemPrompt },
+        ...historyMessages,
         { role: 'user', content: message }
       ],
       {
