@@ -46,17 +46,8 @@ export async function analyzeIntent(
 Responda SEMPRE em português brasileiro, de forma acolhedora e profissional.
 Seu papel: ajudar com agendamentos, dúvidas sobre a agenda, informações sobre salas/terapeutas.
 
-Analise a mensagem do usuário e retorne JSON válido com:
-{
-  "type": "booking" | "query" | "clarification" | "other",
-  "confidence": 0-1,
-  "suggestedResponse": "sua resposta natural e completa como RenovaBot",
-  "requiresConfirmation": true/false,
-  "bookingItems": [] // se for agendamento, itens extraídos
-}
-
 Regras:
-- SEMPRE inclua "suggestedResponse" com sua fala completa
+- Responda naturalmente como o RenovaBot
 - Para agendamentos: confirme o que foi entendido e peça confirmação se needed
 - Para dúvidas: responda diretamente
 - Seja caloroso, use emojis ocasionais
@@ -77,40 +68,17 @@ Regras:
 
     const assistantMessage = response.choices[0]?.message.content || '';
 
-    try {
-      const parsed = JSON.parse(assistantMessage);
-      let response = parsed.suggestedResponse || '';
-      // Se o modelo colocou JSON inteiro no suggestedResponse, extrair o campo real
-      if (response.trim().startsWith('{')) {
-        try {
-          const inner = JSON.parse(response);
-          response = inner.suggestedResponse || response;
-        } catch {}
-      }
-      // Se ainda vier JSON como string (ex: com code fences), tentar extrair
-      if (response.trim().startsWith('{') || response.trim().startsWith('```')) {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const inner = JSON.parse(jsonMatch[0]);
-            response = inner.suggestedResponse || response;
-          } catch {}
-        }
-      }
-      console.debug('[analyzeIntent] extracted response:', response.substring(0, 100));
-      return {
-        type: parsed.type || 'other',
-        confidence: parsed.confidence || 0,
-        suggestedResponse: response,
-        requiresConfirmation: parsed.requiresConfirmation
-      };
-    } catch {
-      return {
-        type: 'other',
-        confidence: 0,
-        suggestedResponse: assistantMessage
-      };
-    }
+    // Detectar se é agendamento por palavras-chave
+    const lower = message.toLowerCase();
+    const isBooking = lower.includes('agendar') || lower.includes('marcar') || lower.includes('reservar') ||
+                      lower.includes('atendimento') || lower.includes('reunião') || lower.includes('reuniao');
+
+    return {
+      type: isBooking ? 'booking' : 'query',
+      confidence: isBooking ? 0.9 : 0.5,
+      suggestedResponse: assistantMessage,
+      requiresConfirmation: isBooking
+    };
   } catch (error: any) {
     console.error('Error analyzing intent:', error);
     // Se for erro de auth (401/403), não logar como erro crítico
