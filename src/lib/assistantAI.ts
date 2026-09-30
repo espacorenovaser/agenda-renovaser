@@ -69,7 +69,7 @@ Regras:
         { role: 'user', content: message }
       ],
       {
-        model: 'openrouter/openrouter/free',
+        model: 'openrouter/auto',
         temperature: 0.3,
         max_tokens: 500
       }
@@ -128,7 +128,7 @@ export async function fetchAssistantCompletion(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: options.model || 'openrouter/openrouter/free',
+      model: options.model || 'openrouter/auto',
       messages,
       temperature: options.temperature,
       max_tokens: options.max_tokens,
