@@ -43,6 +43,11 @@ import {
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
 import { clearLegacyLocalAuth, logout, onAuthChange } from './lib/authService';
+import { googleSignIn, googleLogout, getAccessToken } from './lib/googleAuthService';
+import type { GoogleUser } from './lib/googleAuthService';
+import { createGoogleCalendarEvent, deleteGoogleCalendarEvent, fetchGoogleCalendarEvents } from './lib/googleCalendarService';
+import { parseAssistantCommand } from './lib/assistantParser';
+import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
@@ -130,26 +135,10 @@ export default function Dashboard() {
   };
 
   // --- ESTADO DO GOOGLE AGENDA (GOOGLE CALENDAR) ---
-  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
-
-  useEffect(() => {
-    const unsubGoogleAuth = initAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
-      },
-      () => {
-        setGoogleUser(null);
-        setGoogleToken(null);
-      }
-    );
-    return () => {
-      unsubGoogleAuth();
-    };
-  }, []);
 
   const handleConnectGoogle = async () => {
     setIsConnectingGoogle(true);
@@ -208,11 +197,11 @@ export default function Dashboard() {
     }
   };
 
-  // --- INSCRIÇÃO EM TEMPO REAL NO FIRESTORE ---
+  // --- INSCRIÇÃO EM TEMPO REAL NO SUPABASE ---
   useEffect(() => {
     const unsubEvents = subscribeToEvents(
-      (firestoreEvents) => {
-        setEvents(firestoreEvents);
+      (supabaseEvents) => {
+        setEvents(supabaseEvents);
         setIsLoadingEvents(false);
       },
       (error) => {
@@ -222,8 +211,8 @@ export default function Dashboard() {
     );
 
     const unsubTherapists = subscribeToTherapists(
-      (firestoreTherapists) => {
-        setTherapists(firestoreTherapists);
+      (supabaseTherapists) => {
+        setTherapists(supabaseTherapists);
         setIsLoadingTherapists(false);
       },
       (error) => {

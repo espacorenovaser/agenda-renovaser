@@ -61,11 +61,15 @@ export async function logout(): Promise<void> {
 }
 
 export function onAuthChange(callback: (user: TherapistUser | null) => void) {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    callback(session?.user ? mapAuthUserToTherapistUser(session.user) : null);
+  }).catch(() => callback(null));
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
     callback(session?.user ? mapAuthUserToTherapistUser(session.user) : null);
   });
 
-  return subscription;
+  return () => subscription.unsubscribe();
 }
 
 export async function changePassword(newPassword: string): Promise<void> {
