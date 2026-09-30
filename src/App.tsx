@@ -42,11 +42,11 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
-import { clearLegacyLocalAuth, logout, onAuthChange, getCurrentUser } from './lib/authService';
+import { clearLegacyLocalAuth, logout, onAuthChange, signInWithGoogleCalendar } from './lib/authService';
 import { parseAssistantCommand } from './lib/assistantParser';
 import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
-import { initAuth, googleSignIn, googleLogout, getAccessToken } from './lib/google-calendar-auth';
-import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './lib/google-calendar-service';
+import { initAuth, getAccessToken } from './lib/google-calendar-auth';
+import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './lib/googleCalendarService';
 import type { GoogleUser } from './lib/google-calendar-auth';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
@@ -66,13 +66,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     clearLegacyLocalAuth();
-    const subscription = onAuthChange((user) => {
+    const unsubscribe = onAuthChange((user) => {
       setCurrentUser(user);
       setIsAuthLoading(false);
     });
-    return () => {
-      subscription.unsubscribe();
-    };
+    return unsubscribe;
   }, []);
 
   // --- DADOS DE EVENTOS E TERAPEUTAS (Supabase) ---
@@ -142,33 +140,39 @@ export default function Dashboard() {
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
 
+  const isGoogleConnected = !!googleToken;
+
+  // Hidrata googleToken/googleUser da sessão Supabase (provider_token) no mount
+  useEffect(() => {
+    return initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+  }, []);
+
   const handleConnectGoogle = async () => {
     setIsConnectingGoogle(true);
     try {
-      const res = await googleSignIn();
-      if (res) {
-        setGoogleUser(res.user);
-        setGoogleToken(res.accessToken);
-        showNotification(`Google Agenda conectada com sucesso (${res.user.email})!`);
+      const existing = await getAccessToken();
+      if (existing) {
+        setGoogleToken(existing);
+        showNotification('Google Agenda conectada com sucesso!');
         // Sincronizar eventos imediatamente
-        await handleSyncGoogleCalendar(res.accessToken);
+        await handleSyncGoogleCalendar(existing);
+      } else {
+        await signInWithGoogleCalendar(); // redireciona ao Google
       }
     } catch (err: any) {
       console.error('Erro ao conectar Google Agenda:', err);
       showNotification(`Falha ao conectar Google Agenda: ${err?.message || err}`, 'error');
     } finally {
       setIsConnectingGoogle(false);
-    }
-  };
-
-  const handleDisconnectGoogle = async () => {
-    try {
-      await googleLogout();
-      setGoogleUser(null);
-      setGoogleToken(null);
-      showNotification('Google Agenda desconectada.');
-    } catch (err: any) {
-      console.error('Erro ao desconectar Google Agenda:', err);
     }
   };
 
@@ -319,7 +323,7 @@ export default function Dashboard() {
       const activeToken = googleToken ?? undefined;
       if (activeToken) {
         try {
-          const gcalRes = await createGoogleCalendarEvent(activeToken, {
+          const gcalRes = await createGoogleCalendarEvent({
             title: newEvent.title.trim(),
             category: newEvent.category,
             date: newEvent.date,
@@ -328,7 +332,7 @@ export default function Dashboard() {
             roomName: roomLabel,
             clientEmail: newEvent.clientEmail.trim(),
             clientWhatsApp: newEvent.clientWhatsApp.trim(),
-          } as Evento);
+          } as Evento, activeToken);
           googleEventId = gcalRes?.googleEventId;
           googleHtmlLink = gcalRes?.htmlLink;
         } catch (gcalErr) {
@@ -534,14 +538,14 @@ export default function Dashboard() {
 
           if (activeToken) {
             try {
-              const gcalRes = await createGoogleCalendarEvent(activeToken, {
+              const gcalRes = await createGoogleCalendarEvent({
                 title: item.title,
                 category: item.category,
                 date: item.date,
                 time: item.time,
                 location: item.location,
                 roomName: item.roomName,
-              } as Evento);
+              } as Evento, activeToken);
               googleEventId = gcalRes?.googleEventId;
               googleHtmlLink = gcalRes?.htmlLink;
               anyGcalSuccess = true;
@@ -813,11 +817,11 @@ export default function Dashboard() {
             )}
 
             {/* Status / Botão Google Agenda */}
-            {googleUser ? (
+            {isGoogleConnected ? (
               <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-                  <span className="text-xs font-semibold text-blue-900 hidden sm:inline" title={googleUser.email || ''}>
+                  <span className="text-xs font-semibold text-blue-900 hidden sm:inline" title={googleUser?.email || ''}>
                     Google Agenda
                   </span>
                 </div>
@@ -861,7 +865,7 @@ export default function Dashboard() {
       </header>
 
       {/* Banner de Sincronização com Google Agenda */}
-      {!googleUser ? (
+      {!isGoogleConnected ? (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-4 py-2.5">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 text-blue-900">
@@ -892,7 +896,7 @@ export default function Dashboard() {
           <div className="max-w-7xl mx-auto flex items-center justify-between text-xs text-emerald-900">
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Google Agenda conectado ({googleUser.email}) — Agendamentos sincronizados com seu calendário.</span>
+              <span>Google Agenda conectado ({googleUser?.email ?? 'sua conta Google'}) — Agendamentos sincronizados com seu calendário.</span>
             </div>
             <button
               onClick={() => handleSyncGoogleCalendar()}
