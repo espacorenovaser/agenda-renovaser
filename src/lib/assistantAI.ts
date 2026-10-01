@@ -48,6 +48,8 @@ export async function analyzeIntent(
 Responda SEMPRE em português brasileiro, de forma acolhedora, profissional e calorosa.
 Use emojis ocasionais. Seja claro e direto.
 
+🚫 **NÃO USE MARKDOWN**: Responda em texto puro, sem formatação (sem #, *, _, \`, ~, [], (), etc.). O chat não renderiza markdown - aparece os caracteres literais.
+
 === CONHECIMENTO COMPLETO DO SISTEMA ===
 
 🏢 **INSTITUTO RENOVASER - ESPAÇOS FÍSICOS (REGRA CRÍTICA)**
@@ -142,6 +144,18 @@ Ao agendar, o sistema associa ao terapeuta logado ou permite escolher (se admin)
 
     const assistantMessage = response.choices[0]?.message.content || '';
 
+    // Strip markdown if model still outputs it
+    const cleanMessage = assistantMessage
+      .replace(/#{1,6}\s*/g, '')        // headers
+      .replace(/\*\*(.+?)\*\*/g, '$1')  // bold
+      .replace(/\*(.+?)\*/g, '$1')      // italic
+      .replace(/`(.+?)`/g, '$1')        // inline code
+      .replace(/```[\s\S]*?```/g, '')   // code blocks
+      .replace(/\[(.+?)\]\(.+?\)/g, '$1') // links
+      .replace(/^[\s]*[-*+]\s+/gm, '')  // list items
+      .replace(/^\s*>\s+/gm, '')        // blockquotes
+      .trim();
+
     // Detectar se é agendamento por palavras-chave
     const lower = message.toLowerCase();
     const isBooking = lower.includes('agendar') || lower.includes('marcar') || lower.includes('reservar') ||
@@ -150,7 +164,7 @@ Ao agendar, o sistema associa ao terapeuta logado ou permite escolher (se admin)
     return {
       type: isBooking ? 'booking' : 'query',
       confidence: isBooking ? 0.9 : 0.5,
-      suggestedResponse: assistantMessage,
+      suggestedResponse: cleanMessage,
       requiresConfirmation: isBooking
     };
   } catch (error: any) {
