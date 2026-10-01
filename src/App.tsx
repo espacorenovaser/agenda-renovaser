@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -6,8 +6,6 @@ import {
   Video,
   MapPin,
   Clock,
-  MessageSquare,
-  ChevronRight,
   Sparkles,
   UserPlus,
   Mail,
@@ -16,19 +14,13 @@ import {
   X,
   Trash2,
   CheckCircle2,
-  Database,
   Loader2,
   MessageCircle,
-  Phone,
   Bell,
   LogOut,
   KeyRound,
   Shield,
-  UserCheck,
-  DoorOpen,
-  Layers,
-  RefreshCw,
-  ExternalLink
+  RefreshCw
 } from 'lucide-react';
 import type { Evento, TherapistUser, RoomId } from './types';
 import {
@@ -37,7 +29,6 @@ import {
   deleteEvent,
   subscribeToTherapists,
   saveTherapist,
-  deleteTherapist,
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
@@ -54,9 +45,10 @@ import { DayScheduleView } from './components/DayScheduleView';
 import { WeekScheduleView } from './components/WeekScheduleView';
 import { MonthScheduleView } from './components/MonthScheduleView';
 import { EventDetailsModal } from './components/EventDetailsModal';
-import { WeeklyAttendanceSummary } from './components/WeeklyAttendanceSummary';
 import { RoomSelector } from './components/RoomSelector';
 import { RoomsOccupancyBar } from './components/RoomsOccupancyBar';
+
+const WeeklyAttendanceSummary = lazy(() => import('./components/WeeklyAttendanceSummary').then((m) => ({ default: m.WeeklyAttendanceSummary })));
 
 export default function Dashboard() {
   // --- AUTENTICAÇÃO E SESSÃO (Supabase Auth como fonte única) ---
@@ -125,6 +117,12 @@ export default function Dashboard() {
       text: 'Olá! Como posso ajudar na agenda hoje? Experimente dizer: "Agendar atendimento clínico amanhã às 14h" ou clique em "Marcar horário".'
     }
   ]);
+  const [isTyping, setIsTyping] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [chatMessages, isTyping]);
 
   // Notificação com auto-dismiss
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -274,14 +272,6 @@ export default function Dashboard() {
       location: roomObj ? roomObj.label : 'Sala 1 • Harmonia'
     }));
     setShowNewEventModal(true);
-  };
-
-  // Rolar suavemente até a seção de Resumo de Atendimentos
-  const scrollToSummary = () => {
-    const el = document.getElementById('resumo-atendimentos');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
   };
 
   // --- LÓGICA DE CRIAÇÃO DE EVENTO NO FIRESTORE ---
@@ -492,11 +482,12 @@ export default function Dashboard() {
 
   // --- LÓGICA DO ASSISTENTE INTELIGENTE ---
   const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || isTyping) return;
 
     const userMsg = chatInput.trim();
     setChatMessages((prev) => [...prev, { sender: 'user', text: userMsg }]);
     setChatInput('');
+    setIsTyping(true);
 
     // SEMPRE chama a IA (RenovaBot) para responder
     try {
@@ -644,11 +635,13 @@ export default function Dashboard() {
           }
         ]);
       }
+    } finally {
+      setIsTyping(false);
     }
   };
 
   // --- FILTRAGEM DE EVENTOS COM CONTROLE DE ACESSO (RBAC) ---
-  const filteredEvents = events.filter((e) => {
+  const filteredEvents = useMemo(() => events.filter((e) => {
     // REGRA DE ACESSO: Terapeutas visualizam exclusivamente o que lhes diz respeito
     if (currentUser?.role === 'terapeuta') {
       const isMyEvent =
@@ -671,13 +664,13 @@ export default function Dashboard() {
     const matchRoom = selectedRoomFilter === 'todos' || e.roomId === selectedRoomFilter;
 
     return matchCategory && matchTherapist && matchRoom;
-  });
+  }), [events, currentUser, therapists, activeCategory, selectedTherapist, selectedRoomFilter]);
 
   // Mapeamento de Terapeuta
-  const therapistMap = therapists.reduce<Record<string, string>>((acc, t) => {
+  const therapistMap = useMemo(() => therapists.reduce<Record<string, string>>((acc, t) => {
     acc[t.id] = t.technique ? `${t.name} (${t.technique})` : t.name;
     return acc;
-  }, {});
+  }, {}), [therapists]);
 
   if (isAuthLoading) {
     return (
@@ -704,7 +697,7 @@ export default function Dashboard() {
       {/* Toast de Notificação */}
       {notification && (
         <div 
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg border text-xs font-medium flex items-center gap-2 transition-all ${
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg border text-xs font-medium flex items-center gap-2 transition-colors ${
             notification.type === 'success'
               ? 'bg-emerald-600 text-white border-emerald-500'
               : 'bg-rose-600 text-white border-rose-500'
@@ -855,7 +848,7 @@ export default function Dashboard() {
 
             <button 
               onClick={() => openNewEventAt()}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Novo Agendamento</span>
@@ -879,7 +872,7 @@ export default function Dashboard() {
             <button
               onClick={handleConnectGoogle}
               disabled={isConnectingGoogle}
-              className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer text-xs"
+              className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer text-xs"
             >
               <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
                 <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
@@ -930,7 +923,7 @@ export default function Dashboard() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveCategory(tab.id as any)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                       activeCategory === tab.id
                         ? 'bg-slate-900 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-slate-100'
@@ -952,7 +945,7 @@ export default function Dashboard() {
                   <button
                     key={period.id}
                     onClick={() => setViewPeriod(period.id as any)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       viewPeriod === period.id 
                         ? 'bg-emerald-600 text-white shadow-sm' 
                         : 'text-slate-600 hover:text-slate-900'
@@ -1073,7 +1066,7 @@ export default function Dashboard() {
                           <div 
                             key={evt.id}
                             onClick={() => setSelectedEventForDetails(evt)}
-                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-400 transition-all flex items-center justify-between gap-4 cursor-pointer group"
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-400 transition-colors flex items-center justify-between gap-4 cursor-pointer group"
                           >
                             <div className="space-y-1.5 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
@@ -1119,7 +1112,7 @@ export default function Dashboard() {
                             </div>
 
                             <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                              <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                                 Ver Informações
                               </span>
                               <button 
@@ -1164,7 +1157,7 @@ export default function Dashboard() {
                 type="button"
                 onClick={handleClearChat}
                 title="Limpar mensagens da conversa"
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-rose-200 transition-all cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer shadow-2xs"
               >
                 <Trash2 className="w-3.5 h-3.5 text-slate-400" />
                 <span>Limpar chat</span>
@@ -1172,7 +1165,7 @@ export default function Dashboard() {
             </div>
 
             {/* Mensagens do Chat */}
-            <div className="flex-1 my-3 space-y-3 overflow-y-auto text-xs pr-1">
+            <div ref={chatScrollRef} className="flex-1 my-3 space-y-3 overflow-y-auto text-xs pr-1">
               {chatMessages.map((msg, index) => (
                 <div
                   key={index}
@@ -1193,11 +1186,18 @@ export default function Dashboard() {
                   )}
                 </div>
               ))}
+              {isTyping && (
+                <div className="p-3 rounded-xl max-w-[90%] bg-slate-100 text-slate-700 mr-auto flex items-center gap-1">
+                  <span className="typing-dot" />
+                  <span className="typing-dot typing-dot-2" />
+                  <span className="typing-dot typing-dot-3" />
+                </div>
+              )}
             </div>
 
             {/* Área de Escrita Ampliada Confortável */}
             <div className="pt-2 border-t border-slate-100">
-              <div className="bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all shadow-2xs flex flex-col">
+              <div className="bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-colors shadow-2xs flex flex-col">
                 <textarea
                   rows={4}
                   value={chatInput}
@@ -1217,11 +1217,11 @@ export default function Dashboard() {
                   <span className="text-[10px] text-slate-400 select-none">
                     <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Enter</kbd> envia • <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Shift+Enter</kbd> quebra linha
                   </span>
-                  <button 
+                  <button
                     type="button"
                     onClick={handleSendMessage}
-                    disabled={!chatInput.trim()}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer shrink-0"
+                    disabled={!chatInput.trim() || isTyping}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer shrink-0"
                   >
                     <span>Enviar</span>
                     <Send className="w-3.5 h-3.5" />
@@ -1277,6 +1277,7 @@ export default function Dashboard() {
 
       {/* SEÇÃO: RESUMO DE ATENDIMENTOS DA SEMANA (GRÁFICO RECHARTS) */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <Suspense fallback={<div className="py-8 text-center text-xs text-slate-400">Carregando resumo...</div>}>
         <WeeklyAttendanceSummary
           events={currentUser.role === 'terapeuta' ? filteredEvents : events}
           therapists={
@@ -1296,6 +1297,7 @@ export default function Dashboard() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />
+        </Suspense>
       </div>
 
       {/* MODAL DE INFORMAÇÕES COMPLETAS DO AGENDAMENTO */}
