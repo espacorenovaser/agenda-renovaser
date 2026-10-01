@@ -3,7 +3,6 @@
  * Communicates with the backend endpoint that forwards requests to OpenRouter
  * Keeps the API key secure on the server side
  */
-import type { ParsedBookingItem } from './assistantParser';
 
 export interface AssistantMessage {
   role: 'system' | 'user' | 'assistant';
@@ -25,7 +24,7 @@ export interface AssistantResponse {
 export interface AnalysisIntent {
   type: 'booking' | 'query' | 'clarification' | 'other';
   confidence: number;
-  bookingItems?: ParsedBookingItem[];
+  bookingItems?: Array<{ date: string; time: string; roomId?: string }>
   suggestedResponse?: string;
   requiresConfirmation?: boolean;
 }
@@ -123,8 +122,8 @@ Ao agendar, o sistema associa ao terapeuta logado ou permite escolher (se admin)
 - **Nome**: RenovaBot`;
 
   // Build conversation history for context (last 10 messages)
-  const historyMessages = (history || []).slice(-10).map(h => ({
-    role: h.sender === 'user' ? 'user' : 'assistant',
+  const historyMessages: AssistantMessage[] = (history || []).slice(-10).map(h => ({
+    role: (h.sender === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
     content: h.text
   }));
 
@@ -225,21 +224,3 @@ export async function fetchAssistantCompletion(
   return response.json();
 }
 
-/**
- * Convenience function for booking-related AI assistance
- * @param userInput - Raw user text to parse
- * @returns Parsed booking items from the assistant
- */
-export async function parseAssistantCommandAI(
-  userInput: string
-): Promise<{ isBooking: boolean; items: ParsedBookingItem[]; feedbackSummary?: string }> {
-  // For now, we'll use the existing local parser and potentially enhance with AI later
-  // This maintains backward compatibility while allowing future AI enhancement
-  // TODO: Import events and therapists from appropriate stores/context
-  // This would need integration with the app's state management
-  return {
-    isBooking: false,
-    items: [],
-    feedbackSummary: 'AI parsing not yet implemented - using local parser'
-  };
-}
