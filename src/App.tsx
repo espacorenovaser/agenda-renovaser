@@ -43,6 +43,9 @@ import {
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
 import { clearLegacyLocalAuth, logout, onAuthChange } from './lib/authService';
+import { analyzeIntent } from './lib/assistantAI';
+import { parseAssistantCommand } from './lib/assistantParser';
+import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
@@ -61,11 +64,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     clearLegacyLocalAuth();
-    const unsub = onAuthChange((user) => {
+    const subscription = onAuthChange((user) => {
       setCurrentUser(user);
       setIsAuthLoading(false);
     });
-    return () => unsub();
+    return () => subscription?.unsubscribe();
   }, []);
 
   // --- DADOS DE EVENTOS E TERAPEUTAS (Supabase) ---
@@ -130,82 +133,28 @@ export default function Dashboard() {
   };
 
   // --- ESTADO DO GOOGLE AGENDA (GOOGLE CALENDAR) ---
-  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleUser, setGoogleUser] = useState<{ email: string } | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
 
-  useEffect(() => {
-    const unsubGoogleAuth = initAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
-      },
-      () => {
-        setGoogleUser(null);
-        setGoogleToken(null);
-      }
-    );
-    return () => {
-      unsubGoogleAuth();
-    };
-  }, []);
-
   const handleConnectGoogle = async () => {
     setIsConnectingGoogle(true);
     try {
-      const res = await googleSignIn();
-      if (res) {
-        setGoogleUser(res.user);
-        setGoogleToken(res.accessToken);
-        showNotification(`Google Agenda conectada com sucesso (${res.user.email})!`);
-        // Sincronizar eventos imediatamente
-        await handleSyncGoogleCalendar(res.accessToken);
-      }
-    } catch (err: any) {
-      console.error('Erro ao conectar Google Agenda:', err);
-      showNotification(`Falha ao conectar Google Agenda: ${err?.message || err}`, 'error');
+      showNotification('Integração com Google Agenda indisponível nesta versão.', 'error');
     } finally {
       setIsConnectingGoogle(false);
     }
   };
 
   const handleDisconnectGoogle = async () => {
-    try {
-      await googleLogout();
-      setGoogleUser(null);
-      setGoogleToken(null);
-      showNotification('Google Agenda desconectada.');
-    } catch (err: any) {
-      console.error('Erro ao desconectar Google Agenda:', err);
-    }
+    setGoogleUser(null);
+    setGoogleToken(null);
+    showNotification('Google Agenda desconectada.');
   };
 
-  const handleSyncGoogleCalendar = async (tokenOverride?: string) => {
-    const token = tokenOverride || googleToken || await getAccessToken();
-    if (!token) {
-      showNotification('Conecte sua conta do Google Agenda no topo da página para sincronizar.', 'error');
-      return;
-    }
-    setIsSyncingGoogle(true);
-    try {
-      const gcalEvents = await fetchGoogleCalendarEvents(token);
-      if (gcalEvents && gcalEvents.length > 0) {
-        let syncedCount = 0;
-        for (const gEvt of gcalEvents) {
-          await saveEvent(gEvt);
-          syncedCount++;
-        }
-        showNotification(`${syncedCount} compromissos sincronizados com o Google Agenda!`);
-      } else {
-        showNotification('Google Agenda consultada: todos os compromissos estão em dia.');
-      }
-    } catch (err: any) {
-      console.error('Erro ao sincronizar com Google Agenda:', err);
-      showNotification(`Erro ao sincronizar com Google Agenda: ${err?.message || err}`, 'error');
-    } finally {
-      setIsSyncingGoogle(false);
-    }
+  const handleSyncGoogleCalendar = async () => {
+    showNotification('Integração com Google Agenda indisponível nesta versão.', 'error');
   };
 
   // --- INSCRIÇÃO EM TEMPO REAL NO FIRESTORE ---
@@ -322,29 +271,6 @@ export default function Dashboard() {
       const selectedRoom = getRoomById(newEvent.roomId);
       const roomLabel = newEvent.type === 'presencial' ? (selectedRoom ? selectedRoom.label : newEvent.roomName) : undefined;
 
-      let googleEventId: string | undefined = undefined;
-      let googleHtmlLink: string | undefined = undefined;
-
-      const activeToken = googleToken || await getAccessToken();
-      if (activeToken) {
-        try {
-          const gcalRes = await createGoogleCalendarEvent({
-            title: newEvent.title.trim(),
-            category: newEvent.category,
-            date: newEvent.date,
-            time: newEvent.time.trim(),
-            location: newEvent.location.trim(),
-            roomName: roomLabel,
-            clientEmail: newEvent.clientEmail.trim(),
-            clientWhatsApp: newEvent.clientWhatsApp.trim(),
-          }, activeToken);
-          googleEventId = gcalRes.googleEventId;
-          googleHtmlLink = gcalRes.htmlLink;
-        } catch (gcalErr) {
-          console.warn('Não foi possível gravar no Google Agenda:', gcalErr);
-        }
-      }
-
       const eventData: Omit<Evento, 'id'> = {
         title: newEvent.title.trim(),
         category: newEvent.category,
@@ -358,10 +284,7 @@ export default function Dashboard() {
         clientEmail: newEvent.clientEmail.trim(),
         clientWhatsApp: newEvent.clientWhatsApp.trim(),
         badgeColor,
-        createdAt: new Date().toISOString(),
-        googleEventId,
-        googleHtmlLink,
-        syncedWithGoogle: !!googleEventId
+        createdAt: new Date().toISOString()
       };
 
       await saveEvent(eventData);
@@ -381,11 +304,7 @@ export default function Dashboard() {
         clientWhatsApp: ''
       });
 
-      if (googleEventId) {
-        showNotification('Compromisso gravado e sincronizado com o Google Agenda com sucesso!');
-      } else {
-        showNotification('Compromisso gravado com sucesso com a sala confirmada!');
-      }
+      showNotification('Compromisso gravado com sucesso com a sala confirmada!');
     } catch (err: any) {
       showNotification('Erro ao salvar agendamento: ' + (err.message || err), 'error');
     } finally {
@@ -395,28 +314,13 @@ export default function Dashboard() {
 
   // --- EXCLUIR EVENTO (COM CONFIRMAÇÃO DE OPERAÇÃO DESTRUTIVA) ---
   const handleDeleteEvent = async (id: string, title: string) => {
-    const targetEvent = events.find((e) => e.id === id);
-    const isGoogleSynced = !!targetEvent?.googleEventId;
-    const confirmMsg = isGoogleSynced
-      ? `Deseja realmente excluir "${title}"? Esta ação também removerá o compromisso do seu Google Agenda.`
-      : `Deseja realmente excluir "${title}"?`;
+    const confirmMsg = `Deseja realmente excluir "${title}"?`;
 
     if (!window.confirm(confirmMsg)) {
       return;
     }
 
     try {
-      if (targetEvent?.googleEventId) {
-        const activeToken = googleToken || await getAccessToken();
-        if (activeToken) {
-          try {
-            await deleteGoogleCalendarEvent(targetEvent.googleEventId, activeToken);
-          } catch (gcalDelErr) {
-            console.warn('Erro ao excluir do Google Agenda:', gcalDelErr);
-          }
-        }
-      }
-
       await deleteEvent(id);
       if (selectedEventForDetails?.id === id) {
         setSelectedEventForDetails(null);
@@ -533,32 +437,7 @@ export default function Dashboard() {
 
     if (parsed.isBooking && parsed.items.length > 0) {
       try {
-        const savedTitles: string[] = [];
-        const activeToken = googleToken || await getAccessToken();
-        let anyGcalSuccess = false;
-
         for (const item of parsed.items) {
-          let googleEventId: string | undefined = undefined;
-          let googleHtmlLink: string | undefined = undefined;
-
-          if (activeToken) {
-            try {
-              const gcalRes = await createGoogleCalendarEvent({
-                title: item.title,
-                category: item.category,
-                date: item.date,
-                time: item.time,
-                location: item.location,
-                roomName: item.roomName,
-              }, activeToken);
-              googleEventId = gcalRes.googleEventId;
-              googleHtmlLink = gcalRes.htmlLink;
-              anyGcalSuccess = true;
-            } catch (gcalErr) {
-              console.warn('Erro ao criar no Google Agenda:', gcalErr);
-            }
-          }
-
           const newEvt: Omit<Evento, 'id'> = {
             title: item.title,
             category: item.category,
@@ -576,22 +455,15 @@ export default function Dashboard() {
               : item.category === 'evento'
               ? 'bg-purple-100 text-purple-800 border-purple-200'
               : 'bg-emerald-100 text-emerald-800 border-emerald-200',
-            createdAt: new Date().toISOString(),
-            googleEventId,
-            googleHtmlLink,
-            syncedWithGoogle: !!googleEventId
+            createdAt: new Date().toISOString()
           };
 
           await saveEvent(newEvt);
-          savedTitles.push(`${item.roomName || item.location}: ${item.title}`);
         }
 
         const firstItem = parsed.items[0];
         const [year, month, day] = firstItem.date.split('-');
         const formattedDate = day && month && year ? `${day}/${month}/${year}` : firstItem.date;
-        const gcalNotice = anyGcalSuccess
-          ? '\n\n📅 Sincronizado e salvo diretamente no Google Agenda!'
-          : (!activeToken ? '\n\n💡 Dica: Conecte sua conta do Google Agenda no topo da página para salvar seus agendamentos diretamente no calendário Google.' : '');
 
         if (parsed.items.length > 1) {
           const summaryList = parsed.items
@@ -602,15 +474,15 @@ export default function Dashboard() {
             ...prev,
             {
               sender: 'assistant',
-              text: `Perfeito! Agendei e reservei na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!${gcalNotice}`
+              text: `Perfeito! Agendei e reservei na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!`
             }
           ]);
           showNotification(`${parsed.items.length} agendamentos registrados com sucesso!`);
         } else {
           const isItemOnline = firstItem.type === 'online';
           const msgText = isItemOnline
-            ? `Perfeito! Agendei a reunião online: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} (Modalidade: Online - Google Meet). Espaços físicos liberados.${gcalNotice}`
-            : `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!${gcalNotice}`;
+            ? `Perfeito! Agendei a reunião online: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} (Modalidade: Online - Google Meet). Espaços físicos liberados.`
+            : `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!`;
 
           setChatMessages((prev) => [
             ...prev,

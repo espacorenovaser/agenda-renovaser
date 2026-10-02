@@ -1,13 +1,13 @@
 import React from 'react';
-import { 
-  Clock, 
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon, 
-  Plus, 
-  MapPin, 
-  Video, 
-  User, 
+import {
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  Plus,
+  MapPin,
+  Video,
+  User,
   Phone,
   MessageCircle,
   DoorOpen,
@@ -15,6 +15,25 @@ import {
 } from 'lucide-react';
 import type { Evento, TherapistUser } from '../types';
 import { getRoomById } from '../lib/roomService';
+
+const sanitizeEventTime = (timeStr: string): string => {
+  if (!timeStr) return '14:00 - 15:00';
+  const cleaned = timeStr.replace(/[^\d:+-]/g, '').replace(/\+/g, '-');
+  if (!cleaned.includes('-')) {
+    const match = cleaned.match(/(\d{1,2}):?(\d{2})?/);
+    if (match) {
+      const h = parseInt(match[1], 10);
+      const m = match[2] ? parseInt(match[2], 10) : 0;
+      const nextH = h + 1 < 24 ? h + 1 : 23;
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} - ${nextH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    }
+    return '14:00 - 15:00';
+  }
+  const parts = cleaned.split('-');
+  const start = (parts[0] || '14:00').trim();
+  const end = (parts[1] || '15:00').trim();
+  return `${start} - ${end}`;
+};
 
 interface DayScheduleViewProps {
   events: Evento[];

@@ -55,6 +55,92 @@ app.get(['/api/calendar/events', '/calendar/events'], async (req, res) => {
   }
 });
 
+/**
+ * Endpoint OpenRouter — recebe a mensagem do usuário,
+ * contexto (eventos + terapeutas) e devolve uma intenção.
+ * A chave OPENROUTER_API_KEY fica só aqui no server (Vercel edge / node).
+ */
+const FREE_MODEL = 'google/gemini-2.0-flash-lite-001:free';
+
+app.post('/api/assistant', async (req, res) => {
+  try {
+    const { message, user, context } = req.body || {};
+
+    if (!message || !user || !context) {
+      return res.status(400).json({ error: 'Parâmetros ausentes: message, user, context' });
+    }
+
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_API_KEY) {
+      console.error('[OpenRouter] OPENROUTER_API_KEY não definida');
+      return res.status(500).json({ error: 'Configuração de IA não disponível' });
+    }
+
+    const systemPrompt = `Você é o assistente IA do Instituto RenovaSer.
+Sua função é interpretar comandos de texto para agendamento de compromissos.
+Responda SEMPRE com JSON válido nas seguintes chaves:
+- intent: "book_appointment" | "list_events" | "info" | "other"
+- params: objeto com { title, date, time, roomId?, type?, therapistId?, category?, notes? }
+- confidence: número entre 0 e 1
+
+Considere os eventos existentes: ${JSON.stringify(context.events)}
+Considere os terapeutas: ${JSON.stringify(context.therapists.map((t: any) => ({ id: t.id, name: t.name })))}`;
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: FREE_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message }
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error('[OpenRouter] Erro da API:', errBody);
+      return res.status(500).json({ error: 'Erro ao processar com OpenRouter' });
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+
+    // Tenta extrair JSON da resposta
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      // Fallback: tentar encontrar JSON no texto
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch {}
+      }
+    }
+
+    if (!parsed || !parsed.intent) {
+      return res.status(200).json({
+        intent: 'other',
+        params: { notes: content },
+        confidence: 0.1,
+      });
+    }
+
+    res.json(parsed);
+  } catch (err: any) {
+    console.error('[OpenRouter] Exception:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  }
+});
+
 // Confirmation-gated Execute Delete
 app.post(['/api/calendar/execute-delete', '/calendar/execute-delete'], async (req, res) => {
   try {
