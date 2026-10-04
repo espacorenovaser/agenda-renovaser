@@ -16,25 +16,6 @@ import {
 import type { Evento, TherapistUser } from '../types';
 import { getRoomById } from '../lib/roomService';
 
-const sanitizeEventTime = (timeStr: string): string => {
-  if (!timeStr) return '14:00 - 15:00';
-  const cleaned = timeStr.replace(/[^\d:+-]/g, '').replace(/\+/g, '-');
-  if (!cleaned.includes('-')) {
-    const match = cleaned.match(/(\d{1,2}):?(\d{2})?/);
-    if (match) {
-      const h = parseInt(match[1], 10);
-      const m = match[2] ? parseInt(match[2], 10) : 0;
-      const nextH = h + 1 < 24 ? h + 1 : 23;
-      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} - ${nextH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-    }
-    return '14:00 - 15:00';
-  }
-  const parts = cleaned.split('-');
-  const start = (parts[0] || '14:00').trim();
-  const end = (parts[1] || '15:00').trim();
-  return `${start} - ${end}`;
-};
-
 interface DayScheduleViewProps {
   events: Evento[];
   selectedDate: string; // YYYY-MM-DD
@@ -42,6 +23,43 @@ interface DayScheduleViewProps {
   onSelectEvent: (event: Evento) => void;
   onAddEventAtHour?: (date: string, hourStr: string) => void;
   therapists: TherapistUser[];
+}
+
+/**
+ * Sanitizes event time strings to ensure valid format
+ * Accepts formats: "14:00", "14:00 - 15:00", "14h", "14h30"
+ * Returns normalized format: "HH:MM" or "HH:MM - HH:MM"
+ */
+function sanitizeEventTime(timeStr: string): string {
+  if (!timeStr) return '14:00 - 15:00';
+
+  // Replace "h" with ":" for hour format
+  let cleaned = timeStr.replace(/(\d{1,2})h(\d{2})?/g, (match, h, m) => {
+    const hour = h.padStart(2, '0');
+    const minutes = m ? m : '00';
+    return `${hour}:${minutes}`;
+  });
+
+  // Validate time parts and ensure they're within 00:00-23:59
+  const parts = cleaned.split('-');
+  const timeRegex = /^(\d{1,2}):(\d{2})$/;
+
+  let validTimes: string[] = [];
+  for (let i = 0; i < Math.min(parts.length, 2); i++) {
+    const part = parts[i].trim();
+    const match = part.match(timeRegex);
+    if (match) {
+      const h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      if (h >= 0 && h < 24 && m >= 0 && m < 60) {
+        validTimes.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      }
+    }
+  }
+
+  if (validTimes.length === 0) return '14:00 - 15:00';
+  if (validTimes.length === 1) return `${validTimes[0]} - ${String((parseInt(validTimes[0], 10) + 1) % 24).padStart(2, '0')}:00`;
+  return validTimes.slice(0, 2).join(' - ');
 }
 
 export function DayScheduleView({

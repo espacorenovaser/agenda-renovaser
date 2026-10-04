@@ -52,6 +52,12 @@ export function setCachedLocalTherapists(therapists: TherapistUser[]): void {
   }
 }
 
+async function fetchEvents(): Promise<any[]> {
+  const { data, error } = await supabase.from('events').select('*').order('start_time', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 export function subscribeToEvents(
   callback: (events: any[]) => void,
   onError?: (err: any) => void
@@ -60,8 +66,7 @@ export function subscribeToEvents(
 
   const fetchAll = async () => {
     try {
-      const { data, error } = await supabase.from('events').select('*').order('start_time', { ascending: true });
-      if (error) throw error;
+      const data = await fetchEvents();
       if (cancelled) return;
       setCachedLocalEvents(data || []);
       callback(data || []);
@@ -192,17 +197,6 @@ export async function saveTherapist(therapist: any): Promise<string> {
   }
 
   return userId;
-}
-
-export async function deleteTherapist(therapistId: string): Promise<void> {
-  const cached = getCachedLocalTherapists();
-  setCachedLocalTherapists(cached.filter((t) => t.id !== therapistId));
-
-  try {
-    await supabase.from('profiles').delete().eq('id', therapistId);
-  } catch (err: any) {
-    console.error('Erro ao excluir terapeuta:', err);
-  }
 }
 
 export const DEFAULT_THERAPISTS: TherapistUser[] = [

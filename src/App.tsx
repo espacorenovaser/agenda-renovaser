@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import {
+  Calendar as CalendarIcon,
   Plus,
   Users,
   Video,
@@ -14,11 +15,11 @@ import {
   Loader2,
   MessageCircle,
   Bell,
-  BarChart3,
   LogOut,
   KeyRound,
   Shield,
-  Search
+  Search,
+  RefreshCw
 } from 'lucide-react';
 import type { Evento, TherapistUser, RoomId } from './types';
 import {
@@ -30,17 +31,21 @@ import {
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
-import { clearLegacyLocalAuth, logout, onAuthChange } from './lib/authService';
+import { clearLegacyLocalAuth, logout, onAuthChange, signInWithGoogleCalendar } from './lib/authService';
 import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
+import { initAuth, getAccessToken } from './lib/google-calendar-auth';
+import { fetchGoogleCalendarEvents, createGoogleCalendarEvent, deleteGoogleCalendarEvent } from './lib/googleCalendarService';
+import type { GoogleUser } from './lib/google-calendar-auth';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DayScheduleView } from './components/DayScheduleView';
 import { WeekScheduleView } from './components/WeekScheduleView';
 import { MonthScheduleView } from './components/MonthScheduleView';
 import { EventDetailsModal } from './components/EventDetailsModal';
-import { WeeklyAttendanceSummary } from './components/WeeklyAttendanceSummary';
 import { RoomSelector } from './components/RoomSelector';
 import { RoomsOccupancyBar } from './components/RoomsOccupancyBar';
+
+const WeeklyAttendanceSummary = lazy(() => import('./components/WeeklyAttendanceSummary').then((m) => ({ default: m.WeeklyAttendanceSummary })));
 
 export default function Dashboard() {
   // --- AUTENTICAÇÃO E SESSÃO (Supabase Auth como fonte única) ---
@@ -50,11 +55,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     clearLegacyLocalAuth();
-    const subscription = onAuthChange((user) => {
+    const unsubscribe = onAuthChange((user) => {
       setCurrentUser(user);
       setIsAuthLoading(false);
     });
-    return () => subscription?.unsubscribe();
+    return unsubscribe;
   }, []);
 
   // --- DADOS DE EVENTOS E TERAPEUTAS (Supabase) ---
@@ -121,11 +126,80 @@ export default function Dashboard() {
     };
   }, []);
 
+  // --- ESTADO DO GOOGLE AGENDA (GOOGLE CALENDAR) ---
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
+
+  const isGoogleConnected = !!googleToken;
+
+  // Hidrata googleToken/googleUser da sessão Supabase (provider_token) no mount
+  useEffect(() => {
+    return initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+  }, []);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const existing = await getAccessToken();
+      if (existing) {
+        setGoogleToken(existing);
+        showNotification('Google Agenda conectada com sucesso!');
+        // Sincronizar eventos imediatamente
+        await handleSyncGoogleCalendar(existing);
+      } else {
+        await signInWithGoogleCalendar(); // redireciona ao Google
+      }
+    } catch (err: any) {
+      console.error('Erro ao conectar Google Agenda:', err);
+      showNotification(`Falha ao conectar Google Agenda: ${err?.message || err}`, 'error');
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const handleSyncGoogleCalendar = async (tokenOverride?: string) => {
+    const token = tokenOverride || googleToken || await getAccessToken();
+    if (!token) {
+      showNotification('Conecte sua conta do Google Agenda no topo da página para sincronizar.', 'error');
+      return;
+    }
+    setIsSyncingGoogle(true);
+    try {
+      const gcalEvents = await fetchGoogleCalendarEvents(token);
+      if (gcalEvents && gcalEvents.length > 0) {
+        let syncedCount = 0;
+        for (const gEvt of gcalEvents) {
+          await saveEvent(gEvt);
+          syncedCount++;
+        }
+        showNotification(`${syncedCount} compromissos sincronizados com o Google Agenda!`);
+      } else {
+        showNotification('Google Agenda consultada: todos os compromissos estão em dia.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao sincronizar com Google Agenda:', err);
+      showNotification(`Erro ao sincronizar com Google Agenda: ${err?.message || err}`, 'error');
+    } finally {
+      setIsSyncingGoogle(false);
+    }
+  };
+
   // --- INSCRIÇÃO EM TEMPO REAL NO SUPABASE ---
   useEffect(() => {
     const unsubEvents = subscribeToEvents(
-      (firestoreEvents) => {
-        setEvents(firestoreEvents);
+      (supabaseEvents) => {
+        setEvents(supabaseEvents);
         setIsLoadingEvents(false);
       },
       (error) => {
@@ -135,8 +209,8 @@ export default function Dashboard() {
     );
 
     const unsubTherapists = subscribeToTherapists(
-      (firestoreTherapists) => {
-        setTherapists(firestoreTherapists);
+      (supabaseTherapists) => {
+        setTherapists(supabaseTherapists);
         setIsLoadingTherapists(false);
       },
       (error) => {
@@ -194,14 +268,6 @@ export default function Dashboard() {
     setShowNewEventModal(true);
   };
 
-  // Rolar suavemente até a seção de Resumo de Atendimentos
-  const scrollToSummary = () => {
-    const el = document.getElementById('resumo-atendimentos');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
-
   // --- LÓGICA DE CRIAÇÃO DE EVENTO NO FIRESTORE ---
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -234,6 +300,29 @@ export default function Dashboard() {
 
       const selectedRoom = getRoomById(newEvent.roomId);
       const roomLabel = newEvent.type === 'presencial' ? (selectedRoom ? selectedRoom.label : newEvent.roomName) : undefined;
+
+      let googleEventId: string | undefined = undefined;
+      let googleHtmlLink: string | undefined = undefined;
+
+      const activeToken = googleToken ?? undefined;
+      if (activeToken) {
+        try {
+          const gcalRes = await createGoogleCalendarEvent({
+            title: newEvent.title.trim(),
+            category: newEvent.category,
+            date: newEvent.date,
+            time: newEvent.time.trim(),
+            location: newEvent.location.trim(),
+            roomName: roomLabel,
+            clientEmail: newEvent.clientEmail.trim(),
+            clientWhatsApp: newEvent.clientWhatsApp.trim(),
+          } as Evento, activeToken);
+          googleEventId = gcalRes?.googleEventId;
+          googleHtmlLink = gcalRes?.htmlLink;
+        } catch (gcalErr) {
+          console.warn('Não foi possível gravar no Google Agenda:', gcalErr);
+        }
+      }
 
       const eventData: Omit<Evento, 'id'> = {
         title: newEvent.title.trim(),
@@ -284,8 +373,19 @@ export default function Dashboard() {
   const confirmDeleteEvent = async () => {
     if (!eventToDelete) return;
     const { id, title } = eventToDelete;
+    const targetEvent = events.find((e) => e.id === id);
     setEventToDelete(null);
     try {
+      if (targetEvent?.googleEventId) {
+        const activeToken = googleToken || await getAccessToken();
+        if (activeToken) {
+          try {
+            await deleteGoogleCalendarEvent(targetEvent.googleEventId, activeToken);
+          } catch (gcalDelErr) {
+            console.warn('Erro ao excluir do Google Agenda:', gcalDelErr);
+          }
+        }
+      }
       await deleteEvent(id);
       if (selectedEventForDetails?.id === id) {
         setSelectedEventForDetails(null);
@@ -458,7 +558,7 @@ export default function Dashboard() {
       {/* Toast de Notificação */}
       {notification && (
         <div 
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg border text-xs font-medium flex items-center gap-2 transition-all ${
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg border text-xs font-medium flex items-center gap-2 transition-colors ${
             notification.type === 'success'
               ? 'bg-emerald-600 text-white border-emerald-500'
               : 'bg-rose-600 text-white border-rose-500'
@@ -558,14 +658,6 @@ export default function Dashboard() {
               <span className="hidden sm:inline">Sair</span>
             </button>
 
-            <button
-              onClick={scrollToSummary}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200 shadow-2xs cursor-pointer"
-            >
-              <BarChart3 className="w-4 h-4 text-emerald-600" />
-              <span className="hidden lg:inline">Resumo</span>
-            </button>
-
             {/* Botão de Cadastrar Utilizador: Exclusivo para Administradores */}
             {currentUser.role === 'admin' && (
               <button 
@@ -578,9 +670,46 @@ export default function Dashboard() {
               </button>
             )}
 
+            {/* Status / Botão Google Agenda */}
+            {isGoogleConnected ? (
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+                  <span className="text-xs font-semibold text-blue-900 hidden sm:inline" title={googleUser?.email || ''}>
+                    Google Agenda
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSyncGoogleCalendar()}
+                  disabled={isSyncingGoogle}
+                  title="Sincronizar com Google Agenda"
+                  className="p-1 hover:bg-blue-100 rounded text-blue-700 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGoogle ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                disabled={isConnectingGoogle}
+                title="Conectar com o Google Agenda para sincronizar seus compromissos"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                </svg>
+                <span>{isConnectingGoogle ? 'Conectando...' : 'Google Agenda'}</span>
+              </button>
+            )}
+
             <button 
               onClick={() => openNewEventAt()}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Novo Agendamento</span>
@@ -588,6 +717,52 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Banner de Sincronização com Google Agenda */}
+      {!isGoogleConnected ? (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-4 py-2.5">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-blue-900">
+              <div className="w-6 h-6 rounded-md bg-white border border-blue-200 flex items-center justify-center shrink-0 shadow-2xs">
+                <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <p className="font-medium">
+                <strong className="font-bold text-blue-950">Sincronização com Google Agenda:</strong> Conecte sua conta do Google para manter e salvar todos os agendamentos diretamente no seu calendário.
+              </p>
+            </div>
+            <button
+              onClick={handleConnectGoogle}
+              disabled={isConnectingGoogle}
+              className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer text-xs"
+            >
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+              </svg>
+              <span>{isConnectingGoogle ? 'Conectando...' : 'Conectar Google Agenda'}</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-emerald-50/70 border-b border-emerald-200/80 px-4 py-1.5">
+          <div className="max-w-7xl mx-auto flex items-center justify-between text-xs text-emerald-900">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Google Agenda conectado ({googleUser?.email ?? 'sua conta Google'}) — Agendamentos sincronizados com seu calendário.</span>
+            </div>
+            <button
+              onClick={() => handleSyncGoogleCalendar()}
+              disabled={isSyncingGoogle}
+              className="font-semibold text-emerald-800 hover:text-emerald-950 underline cursor-pointer inline-flex items-center gap-1"
+            >
+              <RefreshCw className={`w-3 h-3 ${isSyncingGoogle ? 'animate-spin' : ''}`} />
+              <span>{isSyncingGoogle ? 'Sincronizando...' : 'Sincronizar agora'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -609,7 +784,7 @@ export default function Dashboard() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveCategory(tab.id as any)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                       activeCategory === tab.id
                         ? 'bg-slate-900 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-slate-100'
@@ -631,7 +806,7 @@ export default function Dashboard() {
                   <button
                     key={period.id}
                     onClick={() => setViewPeriod(period.id as any)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       viewPeriod === period.id 
                         ? 'bg-emerald-600 text-white shadow-sm' 
                         : 'text-slate-600 hover:text-slate-900'
@@ -771,7 +946,7 @@ export default function Dashboard() {
                           <div 
                             key={evt.id}
                             onClick={() => setSelectedEventForDetails(evt)}
-                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-400 transition-all flex items-center justify-between gap-4 cursor-pointer group"
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-400 transition-colors flex items-center justify-between gap-4 cursor-pointer group"
                           >
                             <div className="space-y-1.5 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
@@ -817,7 +992,7 @@ export default function Dashboard() {
                             </div>
 
                             <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                              <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                                 Ver Informações
                               </span>
                               <button 
@@ -928,6 +1103,7 @@ export default function Dashboard() {
 
       {/* SEÇÃO: RESUMO DE ATENDIMENTOS DA SEMANA (GRÁFICO RECHARTS) */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <Suspense fallback={<div className="py-8 text-center text-xs text-slate-400">Carregando resumo...</div>}>
         <WeeklyAttendanceSummary
           events={currentUser.role === 'terapeuta' ? filteredEvents : events}
           therapists={
@@ -947,6 +1123,7 @@ export default function Dashboard() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />
+        </Suspense>
       </div>
 
       {/* MODAL DE INFORMAÇÕES COMPLETAS DO AGENDAMENTO */}
@@ -969,7 +1146,10 @@ export default function Dashboard() {
               <h3 className="font-bold text-slate-900 text-sm">Excluir compromisso?</h3>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Deseja realmente excluir <strong className="text-slate-900">"{eventToDelete.title}"</strong>? Esta ação não pode ser desfeita.
+              Deseja realmente excluir <strong className="text-slate-900">"{eventToDelete.title}"</strong>?
+              {events.find((e) => e.id === eventToDelete.id)?.googleEventId
+                ? ' Esta ação também removerá o compromisso do seu Google Agenda.'
+                : ' Esta ação não pode ser desfeita.'}
             </p>
             <div className="flex items-center justify-end gap-2 pt-1">
               <button

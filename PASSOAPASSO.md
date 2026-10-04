@@ -1,145 +1,101 @@
-# Guia de Configuração - Agenda Renovaser
+PASSOAPASSO.md
+Passo a Passo: Configuração das Chaves de API para Renovaser Agenda
 
-Este documento explica como obter e configurar cada variável de ambiente necessária para executar o projeto.
+Este guia orienta como obter as chaves necessárias para usar a aplicação em desenvolvimento e produção.
 
-## 1. APP_URL
+1. Configurar Supabase (Banco de Dados e Autenticação)
 
-**Descrição:** URL base da aplicação (usado em desenvolvimento e produção)
+Acesse o Dashboard do Supabase:
+- Visite https://supabase.com/dashboard
+- Faça login com sua conta Google, GitHub ou E-mail
+- Clique em "New Project" para criar um novo projeto
 
-**Valor padrão:** `http://localhost:3000` (desenvolvimento)
+Obtenha as Credenciais:
+- Na página do projeto, vá em Settings > API
+- Copie a URL do projeto (Project URL)
+- Copie a chave anonínima (Anon key)
+- Crie um arquivo .env na raiz do projeto com:
 
-**Como configurar:**
-- Em desenvolvimento local, deixe como `http://localhost:3000`
-- Em produção, altere para a URL do seu domínio (ex: `https://agenda.renovaser.com.br`)
-- Adicione em `.env` ou `.env.local`
+VITE_SUPABASE_URL=sua_url_aqui
+VITE_SUPABASE_ANON_KEY=sua_chave_anonima_aqui
 
----
+Substitua "sua_url_aqui" e "sua_chave_anonima_aqui" pelos valores reais copiados.
 
-## 2. Firebase Configuration
+2. Obter Chave da OpenRouter (IA Gratuita)
 
-O projeto utiliza Firebase para autenticação, banco de dados em tempo real (Firestore) e armazenamento de arquivos.
+Acesse o site da OpenRouter:
+- Visite https://openrouter.ai
+- Clique em "Sign up" para criar uma conta
+- Após registrar-se, acesse https://openrouter.ai/keys
 
-### 2.1 Obter Credenciais do Firebase
+Gere uma Chave de API:
+- Na página de chaves, clique em "Create Key"
+- Copie a chave gerada
+- Adicione ao arquivo .env:
 
-**Plataforma:** [Firebase Console](https://console.firebase.google.com/)
+OPENROUTER_API_KEY=sua_chave_openrouter_aqui
 
-**Passos:**
+A chave gratuita permite usar modelos como google/gemini-2.0-flash-lite-001:free e meta-llama/llama-3.3-70b-instruct:free sem custos.
 
-1. Acesse [console.firebase.google.com](https://console.firebase.google.com/)
-2. Clique em **"Adicionar projeto"** ou selecione um projeto existente
-3. No painel lateral, clique em **Configurações do Projeto** (ícone engrenagem)
-4. Vá para a aba **"Seu Apps"** (ou **"Apps"**)
-5. Localize sua aplicação web ou clique em **"Adicionar App"** → **"Web"** (`</>`))
-6. Copie a configuração exibida (objeto com `apiKey`, `authDomain`, `projectId`, etc.)
-7. Você terá algo assim:
+3. Configurar a URL da Aplicação
 
-```javascript
-{
-  "apiKey": "AIzaSy...",
-  "authDomain": "seu-projeto.firebaseapp.com",
-  "projectId": "seu-projeto",
-  "storageBucket": "seu-projeto.appspot.com",
-  "messagingSenderId": "1234567890",
-  "appId": "1:1234567890:web:abc123def456"
-}
-```
+Configure o APP_URL no .env para refletir o ambiente:
 
-### 2.2 Configurar Autenticação (OAuth com Google)
+Para desenvolvimento local:
+VITE_APP_URL=http://localhost:5173
 
-1. No Firebase Console, vá para **Authentication** (Autenticação)
-2. Clique em **"Get Started"** (se for primeira vez)
-3. Ative **Google** como método de login:
-   - Clique em **Google**
-   - Ative a opção
-   - Configure o email de suporte (obrigatório)
-4. Na aba **"Settings"** → **"Authorized domains"**, adicione:
-   - `localhost` (desenvolvimento)
-   - Seu domínio em produção (ex: `agenda.renovaser.com.br`)
+Para produção (Vercel):
+VITE_APP_URL=https://seu-dominio-aqui.com
 
-### 2.3 Configurar Firestore (Banco de Dados)
+4. Checklist Final
 
-1. No Firebase Console, vá para **Firestore Database**
-2. Clique em **"Create Database"**
-3. Selecione modo:
-   - **Teste** (para desenvolvimento inicial, sem autenticação)
-   - **Produção** (com regras de segurança obrigatórias)
-4. Escolha a região (ex: `us-central1` ou `europe-west1`)
-5. Clique em **"Enable"**
+Antes de executar a aplicação:
+- Verifique que todos os 4 valores estão no .env
+- Confirme que as chaves foram copiadas corretamente
+- Não commite o arquivo .env (use .env.example como template)
+- Teste a conexão executando npm run dev
 
-### 2.4 Obter OAuth Client ID para Google Calendar
+Para produção no Vercel:
+- Adicione as variáveis de ambiente no dashboard do Vercel
+- Configure Settings > Environment Variables
+- Cada chave deve ser adicionada como uma variável separada
 
-Este ID é usado para acessar o Google Calendar do usuário.
+5. Troubleshooting
 
-**Passos:**
+Se receber erro "OPENROUTER_API_KEY not configured":
+- Reinicie o servidor (npm run dev)
+- Verifique que a chave está no .env (não no .env.example)
+- Confirme que não há espaços extras na chave
 
-1. Vá para [Google Cloud Console](https://console.cloud.google.com/)
-2. Selecione seu projeto Firebase
-3. No menu lateral, vá para **"APIs & Services"** → **"Credentials"**
-4. Clique em **"Create Credentials"** → **"OAuth client ID"**
-5. Se solicitado, configure a "OAuth consent screen":
-   - Clique em **"Consent Screen"**
-   - Escolha **"External"**
-   - Preencha informações básicas (app name, email de suporte)
-   - Salve
-6. Retorne para **"Credentials"** e crie OAuth Client ID:
-   - Tipo: **"Web application"**
-   - Adicione em **"Authorized redirect URIs":**
-     - `http://localhost:3000` (desenvolvimento)
-     - Sua URL de produção
-7. Clique em **"Create"** e copie o **Client ID**
+Se receber erro de autenticação no Supabase:
+- Verifique a URL do projeto (deve ser https://...)
+- Confirme que a chave anonínima está correta
+- Na seção SQL do Supabase, crie as tabelas necessárias
 
----
+Para modelos IA gratuitos que funcionam:
+- google/gemini-2.0-flash-lite-001:free (recomendado, mais rápido)
+- meta-llama/llama-3.3-70b-instruct:free (mais poderoso, mais lento)
 
-## Configuração Completa do `.env`
+Mais informações:
+- Documentação Supabase: https://supabase.com/docs
+- Documentação OpenRouter: https://openrouter.ai/docs
+- Guia de Modelos Gratuitos: https://openrouter.ai/models?filter=free
 
-Crie um arquivo `.env` (ou `.env.local` para desenvolvimento local) na raiz do projeto:
+6. Google OAuth + Google Agenda (login e sincronização)
 
-```
-APP_URL=http://localhost:3000
-```
+6.1. Google Cloud Console — tela de consentimento OAuth:
+- Acesse https://console.cloud.google.com > APIs e serviços > Tela de consentimento OAuth
+- Tipo de usuário: Externo; preencha nome do app, e-mail de suporte e domínio
+- Em "Escopos", adicione:
+  - https://www.googleapis.com/auth/calendar.events
+  - https://www.googleapis.com/auth/calendar
+- Adicione os e-mails dos terapeutas como usuários de teste (enquanto o app estiver em modo de teste)
+- Ative a Google Calendar API em APIs e serviços > Biblioteca > "Google Calendar API" > Ativar
 
-**Importante:** As credenciais do Firebase estão em `firebase-applet-config.json`, que está versionado no repositório. Este arquivo contém a configuração pública do Firebase e é seguro commit-á-lo.
-
----
-
-## Variáveis Não Utilizadas (Legado)
-
-As seguintes variáveis foram removidas pois o projeto não utiliza IA generativa:
-
-- ~~GEMINI_API_KEY~~
-- ~~OPENAI_API_KEY~~
-- ~~AI_PROVIDER~~
-- ~~OPENAI_MODEL~~
-
-O projeto usa **parsing de texto em tempo real** para interpretar comandos de agendamento, sem depender de APIs de IA.
-
----
-
-## Validação
-
-Para testar se tudo está configurado corretamente:
-
-```bash
-npm run build
-npm run start
-```
-
-Acesse `http://localhost:3000` em seu navegador. Se ver a interface de login, a configuração está correta.
-
----
-
-## Troubleshooting
-
-### Erro: "FIREBASE_APP_ID is undefined"
-- Verifique se `firebase-applet-config.json` existe e contém todos os campos necessários
-
-### Erro: "Authentication not enabled"
-- Ative Google Sign-In em Firebase Console → Authentication
-
-### Erro ao conectar com Google Calendar
-- Verifique se o OAuth Client ID está correto em `firebase-applet-config.json`
-- Confirme que a URL atual está em "Authorized domains"
-
----
-
-**Última atualização:** 2026-09-29
+6.2. Supabase Dashboard — ativar provedor Google:
+- Acesse https://supabase.com/dashboard > seu projeto > Authentication > Providers > Google
+- Ative o provedor e informe o Client ID e o Client Secret (criados em Google Cloud Console > APIs e serviços > Credenciais > Criar credencial > ID do cliente OAuth)
+- Copie o Redirect URI exibido no painel do Supabase (formato https://<projeto>.supabase.co/auth/v1/callback)
+- No Google Cloud Console, na credencial OAuth criada, cadastre esse Redirect URI em "URIs de redirecionamento autorizados"
+- No Supabase Dashboard > Authentication > URL Configuration, configure Site URL e Redirect URLs com o endereço do app (local: http://localhost:5173; produção: seu domínio — o login usa `redirectTo: window.location.origin`)
+- O app já envia os escopos da Agenda e `redirectTo: window.location.origin` no `signInWithOAuth`, e lê o `provider_token` da sessão Supabase (com fallback em `localStorage`) para criar, editar e excluir eventos no Google Agenda

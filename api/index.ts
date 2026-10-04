@@ -7,6 +7,64 @@ const app = express();
 
 app.use(express.json());
 
+// OpenRouter Assistant API - forward frontend requests to OpenRouter models using server-side key
+app.post('/api/assistant', async (req, res) => {
+  try {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'OpenRouter API key not configured' });
+    }
+
+    const { model, messages, temperature, max_tokens, top_p, tools } = req.body;
+
+    // Build OpenRouter API request payload
+    const openRouterPayload: any = {
+      model,
+      messages,
+    };
+
+    if (temperature !== undefined) openRouterPayload.temperature = temperature;
+    if (max_tokens !== undefined) openRouterPayload.max_tokens = max_tokens;
+    if (top_p !== undefined) openRouterPayload.top_p = top_p;
+    if (tools !== undefined) openRouterPayload.tools = tools;
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.APP_URL || 'http://localhost:5173',
+        'X-Title': 'Renovaser Agenda'
+      },
+      body: JSON.stringify(openRouterPayload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
+      return res.status(response.status).json({
+        error: errorData.error || errorData.message || `OpenRouter API error: ${response.status}`,
+        status: response.status,
+        details: errorData
+      });
+    }
+
+    const data = await response.json();
+    return res.json(data);
+  } catch (error: any) {
+    console.error('Error in /api/assistant:', error);
+    return res.status(500).json({
+      error: error.message || 'Internal server error',
+      status: 500
+    });
+  }
+});
+
 // Health check endpoint (handles /api/health, /health, /api and /api/index)
 app.get(['/api/health', '/health', '/api', '/api/index'], (_req, res) => {
   res.json({
