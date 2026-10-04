@@ -56,36 +56,52 @@ export function subscribeToEvents(
   callback: (events: any[]) => void,
   onError?: (err: any) => void
 ) {
-  const localInitial = getCachedLocalEvents();
-  if (localInitial.length > 0) callback(localInitial);
+  let cancelled = false;
 
-  supabase
+  const fetchAll = async () => {
+    try {
+      const { data, error } = await supabase.from('events').select('*').order('start_time', { ascending: true });
+      if (error) throw error;
+      if (cancelled) return;
+      setCachedLocalEvents(data || []);
+      callback(data || []);
+    } catch (err: any) {
+      console.warn('Erro ao sincronizar eventos:', err);
+      if (cancelled) return;
+      if (onError) onError(err);
+      const fallback = getCachedLocalEvents();
+      if (fallback.length > 0) callback(fallback);
+    }
+  };
+
+  const cached = getCachedLocalEvents();
+  if (cached.length > 0) {
+    callback(cached);
+  }
+  void fetchAll();
+
+  const channel = supabase
     .channel('events-all')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => {
-      try {
-        const { data, error } = await supabase.from('events').select('*').order('start_time', { ascending: true });
-        if (error) throw error;
-        setCachedLocalEvents(data || []);
-        callback(data || []);
-      } catch (err: any) {
-        console.warn('Erro ao sincronizar eventos:', err);
-        if (onError) onError(err);
-        callback(getCachedLocalEvents());
-      }
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
+      void fetchAll();
     })
     .subscribe();
 
-  return () => {};
+  return () => {
+    cancelled = true;
+    void supabase.removeChannel(channel);
+  };
 }
 
 export async function saveEvent(event: any): Promise<string> {
   const eventId = event.id || `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const payload = { ...event, id: eventId };
   const cached = getCachedLocalEvents();
   const idx = cached.findIndex((e) => e.id === eventId);
-  setCachedLocalEvents(idx >= 0 ? [...cached.slice(0, idx), event, ...cached.slice(idx + 1)] : [...cached, event]);
+  setCachedLocalEvents(idx >= 0 ? [...cached.slice(0, idx), payload, ...cached.slice(idx + 1)] : [...cached, payload]);
 
   try {
-    const { error } = await supabase.from('events').upsert(event, { onConflict: 'id' });
+    const { error } = await supabase.from('events').upsert(payload, { onConflict: 'id' });
     if (error) throw error;
   } catch (err: any) {
     console.error('Erro ao salvar evento:', err);
@@ -109,34 +125,52 @@ export function subscribeToTherapists(
   callback: (therapists: TherapistUser[]) => void,
   onError?: (err: any) => void
 ) {
-  const localInitial = getCachedLocalTherapists();
-  if (localInitial.length > 0) callback(localInitial);
+  let cancelled = false;
 
-  supabase
-    .channel('profiles-all')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
-      try {
-        const { data, error } = await supabase.from('profiles').select('*');
-        if (error) throw error;
-        const therapists = (data || []).map((p) => ({
-          id: p.id,
-          name: p.name,
-          email: p.email,
-          role: p.role || 'terapeuta',
-          technique: '',
-          createdAt: p.created_at,
-        }));
+  const mapProfiles = (data: any[]): TherapistUser[] =>
+    (data || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      email: p.email,
+      role: p.role || 'terapeuta',
+      technique: p.technique || '',
+      createdAt: p.created_at,
+    }));
+
+  const fetchAll = async () => {
+    try {
+      const { data, error } = await supabase.from('profiles').select('*');
+      if (error) throw error;
+      if (cancelled) return;
+      const therapists = mapProfiles(data || []);
+      if (therapists.length > 0) {
         setCachedLocalTherapists(therapists);
         callback(therapists);
-      } catch (err: any) {
-        console.warn('Erro ao sincronizar terapeutas:', err);
-        if (onError) onError(err);
-        callback(getCachedLocalTherapists());
       }
+    } catch (err: any) {
+      console.warn('Erro ao sincronizar terapeutas:', err);
+      if (cancelled) return;
+      if (onError) onError(err);
+    }
+  };
+
+  const cached = getCachedLocalTherapists();
+  if (cached.length > 0) {
+    callback(cached);
+  }
+  void fetchAll();
+
+  const channel = supabase
+    .channel('profiles-all')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+      void fetchAll();
     })
     .subscribe();
 
-  return () => {};
+  return () => {
+    cancelled = true;
+    void supabase.removeChannel(channel);
+  };
 }
 
 export async function saveTherapist(therapist: any): Promise<string> {
@@ -168,90 +202,6 @@ export async function deleteTherapist(therapistId: string): Promise<void> {
     await supabase.from('profiles').delete().eq('id', therapistId);
   } catch (err: any) {
     console.error('Erro ao excluir terapeuta:', err);
-  }
-}
-
-export async function syncUserProfile(user: any) {
-  try {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', user.uid).single();
-    if (error || !data) {
-      const newProfile = {
-        id: user.uid,
-        name: user.displayName || 'Usuário da Equipe',
-        email: user.email || '',
-        role: 'terapeuta',
-        created_at: new Date().toISOString(),
-      };
-      await supabase.from('profiles').insert(newProfile);
-      return newProfile;
-    }
-    return data;
-  } catch (err: any) {
-    console.warn('Could not sync user profile:', err);
-  }
-}
-
-export async function saveChatMessage(userId: string, message: any): Promise<string | undefined> {
-  try {
-    const { data, error } = await supabase.from('chat_messages').insert({
-      user_id: userId,
-      sender: message.role,
-      content: message.content,
-    }).select().single();
-    if (error) throw error;
-    return data?.id;
-  } catch (err: any) {
-    console.warn('Could not save chat message:', err);
-  }
-}
-
-export function subscribeToMessages(userId: string, callback: (msgs: any[]) => void, onError?: (err: any) => void) {
-  supabase
-    .channel(`messages-${userId}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages', filter: `user_id=eq.${userId}` }, async () => {
-      try {
-        const { data, error } = await supabase.from('chat_messages').select('*').eq('user_id', userId).order('created_at', { ascending: true }).limit(50);
-        if (error) throw error;
-        callback(data || []);
-      } catch (err: any) {
-        if (onError) onError(err);
-      }
-    })
-    .subscribe();
-
-  return () => {};
-}
-
-export async function clearChatMessages(userId: string): Promise<void> {
-  try {
-    await supabase.from('chat_messages').delete().eq('user_id', userId);
-  } catch (err: any) {
-    console.warn('Could not clear chat messages:', err);
-  }
-}
-
-export async function logMeetingAction(userId: string, log: any): Promise<string | undefined> {
-  try {
-    const { data, error } = await supabase.from('chat_messages').insert({
-      user_id: userId,
-      sender: 'user',
-      content: log.title,
-    }).select().single();
-    if (error) throw error;
-    return data?.id;
-  } catch (err: any) {
-    console.warn('Could not log meeting action:', err);
-  }
-}
-
-export async function getRecentMeetingLogs(userId: string): Promise<any[]> {
-  try {
-    const { data, error } = await supabase.from('chat_messages').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20);
-    if (error) throw error;
-    return data || [];
-  } catch (err: any) {
-    console.warn('Could not fetch meeting logs:', err);
-    return [];
   }
 }
 

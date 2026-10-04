@@ -1,35 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Calendar as CalendarIcon, 
-  Plus, 
-  Users, 
-  Video, 
-  MapPin, 
-  Clock, 
-  MessageSquare, 
-  ChevronRight,
-  Sparkles,
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  Plus,
+  Users,
+  Video,
+  MapPin,
+  Clock,
   UserPlus,
   Mail,
   Filter,
-  Send,
   X,
   Trash2,
   CheckCircle2,
-  Database,
   Loader2,
   MessageCircle,
-  Phone,
   Bell,
   BarChart3,
   LogOut,
   KeyRound,
   Shield,
-  UserCheck,
-  DoorOpen,
-  Layers,
-  RefreshCw,
-  ExternalLink
+  Search
 } from 'lucide-react';
 import type { Evento, TherapistUser, RoomId } from './types';
 import {
@@ -38,13 +27,10 @@ import {
   deleteEvent,
   subscribeToTherapists,
   saveTherapist,
-  deleteTherapist,
   DEFAULT_EVENTS,
   DEFAULT_THERAPISTS
 } from './lib/supabaseService';
 import { clearLegacyLocalAuth, logout, onAuthChange } from './lib/authService';
-import { analyzeIntent } from './lib/assistantAI';
-import { parseAssistantCommand } from './lib/assistantParser';
 import { getRoomById, checkRoomAvailability, validateRoomBooking } from './lib/roomService';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
@@ -79,17 +65,23 @@ export default function Dashboard() {
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // --- ESTADOS DE FILTRO E VISUALIZAÇÃO ---
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Data local (evita o deslocamento de fuso do toISOString, que é UTC)
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
   const [activeCategory, setActiveCategory] = useState<'all' | 'atendimento' | 'reuniao' | 'evento'>('all');
   const [viewPeriod, setViewPeriod] = useState<'dia' | 'semana' | 'mes' | 'todos'>('dia');
   const [selectedTherapist, setSelectedTherapist] = useState<string>('todos');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<RoomId | 'todos'>('todos');
   const [selectedDateForDay, setSelectedDateForDay] = useState<string>(todayStr);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // --- ESTADOS DE MODAIS ---
   const [showNewEventModal, setShowNewEventModal] = useState(false);
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [selectedEventForDetails, setSelectedEventForDetails] = useState<Evento | null>(null);
+  const [eventToDelete, setEventToDelete] = useState<Evento | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- FORMULÁRIO DE NOVO EVENTO ---
@@ -115,49 +107,21 @@ export default function Dashboard() {
     technique: '',
   });
 
-  // --- ESTADO DO CHAT / ASSISTENTE ---
-  const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'assistant'; text: string; action?: 'open_modal' }>>([
-    {
-      sender: 'assistant',
-      text: 'Olá! Como posso ajudar na agenda hoje? Experimente dizer: "Agendar atendimento clínico amanhã às 14h" ou clique em "Marcar horário".'
-    }
-  ]);
-
-  // Notificação com auto-dismiss
-  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+  // Notificação com auto-dismiss (reinicia o timer a cada chamada)
+  const notificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
-  };
+    if (notificationTimer.current) clearTimeout(notificationTimer.current);
+    notificationTimer.current = setTimeout(() => setNotification(null), 4000);
+  }, []);
 
-  // --- ESTADO DO GOOGLE AGENDA (GOOGLE CALENDAR) ---
-  const [googleUser, setGoogleUser] = useState<{ email: string } | null>(null);
-  const [googleToken, setGoogleToken] = useState<string | null>(null);
-  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
-  const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
+  useEffect(() => {
+    return () => {
+      if (notificationTimer.current) clearTimeout(notificationTimer.current);
+    };
+  }, []);
 
-  const handleConnectGoogle = async () => {
-    setIsConnectingGoogle(true);
-    try {
-      showNotification('Integração com Google Agenda indisponível nesta versão.', 'error');
-    } finally {
-      setIsConnectingGoogle(false);
-    }
-  };
-
-  const handleDisconnectGoogle = async () => {
-    setGoogleUser(null);
-    setGoogleToken(null);
-    showNotification('Google Agenda desconectada.');
-  };
-
-  const handleSyncGoogleCalendar = async () => {
-    showNotification('Integração com Google Agenda indisponível nesta versão.', 'error');
-  };
-
-  // --- INSCRIÇÃO EM TEMPO REAL NO FIRESTORE ---
+  // --- INSCRIÇÃO EM TEMPO REAL NO SUPABASE ---
   useEffect(() => {
     const unsubEvents = subscribeToEvents(
       (firestoreEvents) => {
@@ -312,14 +276,15 @@ export default function Dashboard() {
     }
   };
 
-  // --- EXCLUIR EVENTO (COM CONFIRMAÇÃO DE OPERAÇÃO DESTRUTIVA) ---
+  // --- EXCLUIR EVENTO (COM CONFIRMAÇÃO EM MODAL PRÓPRIO) ---
   const handleDeleteEvent = async (id: string, title: string) => {
-    const confirmMsg = `Deseja realmente excluir "${title}"?`;
+    setEventToDelete({ id, title } as Evento);
+  };
 
-    if (!window.confirm(confirmMsg)) {
-      return;
-    }
-
+  const confirmDeleteEvent = async () => {
+    if (!eventToDelete) return;
+    const { id, title } = eventToDelete;
+    setEventToDelete(null);
     try {
       await deleteEvent(id);
       if (selectedEventForDetails?.id === id) {
@@ -387,166 +352,86 @@ export default function Dashboard() {
     }
   };
 
-  // --- LIMPAR CHAT DO ASSISTENTE ---
-  const handleClearChat = () => {
-    setChatMessages([
-      {
-        sender: 'assistant',
-        text: 'Histórico da conversa limpo! Como posso ajudar na agenda do RenovaSer hoje? Você pode escrever o agendamento desejado (ex: "Agendar dia 26/09 às 14h na Sala 1") ou clicar em "Marcar horário".'
-      }
-    ]);
-    setChatInput('');
-    showNotification('Histórico da conversa limpo com sucesso.');
-  };
-
-  // --- LÓGICA DO ASSISTENTE INTELIGENTE ---
-  const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
-
-    const userMsg = chatInput.trim();
-    setChatMessages((prev) => [...prev, { sender: 'user', text: userMsg }]);
-    setChatInput('');
-
-    const lower = userMsg.toLowerCase();
-
-    // Tratamento especial para mensagens genéricas como "marcar horário"
-    const isGenericBooking = 
-      lower === 'marcar horário' || 
-      lower === 'marcar horario' || 
-      lower === 'agendar' || 
-      lower === 'novo agendamento' || 
-      lower === 'agendar horário' || 
-      lower === 'agendar horario';
-
-    if (isGenericBooking) {
-      setTimeout(() => {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: 'Com certeza! Você pode clicar no botão abaixo para abrir o formulário completo de agendamento ou me dizer os detalhes como: "Agendar atendimento amanhã às 14h na Sala 1".',
-            action: 'open_modal'
-          }
-        ]);
-      }, 300);
-      return;
-    }
-
-    // Processamento inteligente do comando com suporte a múltiplas salas e intervalos de horário
-    const parsed = parseAssistantCommand(userMsg, events, therapists);
-
-    if (parsed.isBooking && parsed.items.length > 0) {
-      try {
-        for (const item of parsed.items) {
-          const newEvt: Omit<Evento, 'id'> = {
-            title: item.title,
-            category: item.category,
-            time: item.time,
-            date: item.date,
-            location: item.location,
-            type: item.type,
-            roomId: item.roomId,
-            roomName: item.roomName,
-            therapistId: item.therapistId,
-            clientEmail: '',
-            clientWhatsApp: '',
-            badgeColor: item.category === 'reuniao'
-              ? 'bg-blue-100 text-blue-800 border-blue-200'
-              : item.category === 'evento'
-              ? 'bg-purple-100 text-purple-800 border-purple-200'
-              : 'bg-emerald-100 text-emerald-800 border-emerald-200',
-            createdAt: new Date().toISOString()
-          };
-
-          await saveEvent(newEvt);
-        }
-
-        const firstItem = parsed.items[0];
-        const [year, month, day] = firstItem.date.split('-');
-        const formattedDate = day && month && year ? `${day}/${month}/${year}` : firstItem.date;
-
-        if (parsed.items.length > 1) {
-          const summaryList = parsed.items
-            .map((it) => `• ${it.roomName || it.location}: "${it.title}"`)
-            .join('\n');
-
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: 'assistant',
-              text: `Perfeito! Agendei e reservei na agenda ${parsed.items.length} atendimentos para a data ${formattedDate} (${firstItem.time}):\n\n${summaryList}\n\nTodos os espaços físicos foram reservados com sucesso!`
-            }
-          ]);
-          showNotification(`${parsed.items.length} agendamentos registrados com sucesso!`);
-        } else {
-          const isItemOnline = firstItem.type === 'online';
-          const msgText = isItemOnline
-            ? `Perfeito! Agendei a reunião online: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} (Modalidade: Online - Google Meet). Espaços físicos liberados.`
-            : `Perfeito! Agendei e reservei na agenda: "${firstItem.title}" para a data ${formattedDate} às ${firstItem.time} no espaço (${firstItem.roomName || firstItem.location}). O espaço físico já foi reservado!`;
-
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              sender: 'assistant',
-              text: msgText
-            }
-          ]);
-          showNotification(isItemOnline ? 'Reunião online registrada na agenda!' : 'Compromisso registrado na agenda e sala reservada!');
-        }
-      } catch (err: any) {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: `Ocorreu uma falha ao salvar na agenda: ${err.message || err}. Por favor, tente novamente.`
-          }
-        ]);
-      }
-    } else {
-      setTimeout(() => {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            sender: 'assistant',
-            text: `Recebi sua mensagem! Como não identifiquei o dia ou horário exato na mensagem, você pode me informar os detalhes (ex: "Agendar dia 26/09 às 15h na Sala 2") ou clicar no botão abaixo para abrir o formulário já com a seleção das salas:`,
-            action: 'open_modal'
-          }
-        ]);
-      }, 350);
-    }
-  };
-
   // --- FILTRAGEM DE EVENTOS COM CONTROLE DE ACESSO (RBAC) ---
-  const filteredEvents = events.filter((e) => {
-    // REGRA DE ACESSO: Terapeutas visualizam exclusivamente o que lhes diz respeito
-    if (currentUser?.role === 'terapeuta') {
-      const isMyEvent =
-        e.therapistId === currentUser.id ||
-        (therapists.find((t) => t.id === e.therapistId)?.email.toLowerCase() === currentUser.email.toLowerCase());
-      
-      const isGeneralTeamEvent =
-        (e.category === 'reuniao' || e.category === 'evento') &&
-        (e.title.toLowerCase().includes('equipe') ||
-         e.title.toLowerCase().includes('instituto') ||
-         e.title.toLowerCase().includes('geral'));
+  const filteredEvents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return events.filter((e) => {
+      // REGRA DE ACESSO: Terapeutas visualizam exclusivamente o que lhes diz respeito
+      if (currentUser?.role === 'terapeuta') {
+        const isMyEvent =
+          e.therapistId === currentUser.id ||
+          (therapists.find((t) => t.id === e.therapistId)?.email.toLowerCase() === currentUser.email.toLowerCase());
 
-      if (!isMyEvent && !isGeneralTeamEvent) {
-        return false;
+        const isGeneralTeamEvent =
+          (e.category === 'reuniao' || e.category === 'evento') &&
+          (e.title.toLowerCase().includes('equipe') ||
+           e.title.toLowerCase().includes('instituto') ||
+           e.title.toLowerCase().includes('geral'));
+
+        if (!isMyEvent && !isGeneralTeamEvent) {
+          return false;
+        }
       }
-    }
 
-    const matchCategory = activeCategory === 'all' || e.category === activeCategory;
-    const matchTherapist = selectedTherapist === 'todos' || e.therapistId === selectedTherapist;
-    const matchRoom = selectedRoomFilter === 'todos' || e.roomId === selectedRoomFilter;
+      const matchCategory = activeCategory === 'all' || e.category === activeCategory;
+      const matchTherapist = selectedTherapist === 'todos' || e.therapistId === selectedTherapist;
+      const matchRoom = selectedRoomFilter === 'todos' || e.roomId === selectedRoomFilter;
+      const matchSearch =
+        !q ||
+        e.title.toLowerCase().includes(q) ||
+        (e.location || '').toLowerCase().includes(q) ||
+        (e.clientEmail || '').toLowerCase().includes(q) ||
+        (e.clientWhatsApp || '').includes(q);
 
-    return matchCategory && matchTherapist && matchRoom;
-  });
+      return matchCategory && matchTherapist && matchRoom && matchSearch;
+    });
+  }, [events, therapists, currentUser, activeCategory, selectedTherapist, selectedRoomFilter, searchQuery]);
+
+  const hasActiveFilters =
+    activeCategory !== 'all' ||
+    selectedTherapist !== 'todos' ||
+    selectedRoomFilter !== 'todos' ||
+    searchQuery.trim() !== '';
+
+  const clearFilters = () => {
+    setActiveCategory('all');
+    setSelectedTherapist('todos');
+    setSelectedRoomFilter('todos');
+    setSearchQuery('');
+  };
 
   // Mapeamento de Terapeuta
-  const therapistMap = therapists.reduce<Record<string, string>>((acc, t) => {
-    acc[t.id] = t.technique ? `${t.name} (${t.technique})` : t.name;
-    return acc;
-  }, {});
+  const therapistMap = useMemo(
+    () =>
+      therapists.reduce<Record<string, string>>((acc, t) => {
+        acc[t.id] = t.technique ? `${t.name} (${t.technique})` : t.name;
+        return acc;
+      }, {}),
+    [therapists]
+  );
+
+  // Próximos compromissos (hoje em diante, ordenados) para o painel lateral
+  const upcomingEvents = useMemo(
+    () =>
+      [...filteredEvents]
+        .filter((e) => e.date >= todayStr)
+        .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
+        .slice(0, 5),
+    [filteredEvents, todayStr]
+  );
+
+  // Fechar modais com Escape
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setShowNewEventModal(false);
+      setShowNewUserModal(false);
+      setSelectedEventForDetails(null);
+      setEventToDelete(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   if (isAuthLoading) {
     return (
@@ -693,43 +578,6 @@ export default function Dashboard() {
               </button>
             )}
 
-            {/* Status / Botão Google Agenda */}
-            {googleUser ? (
-              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg shadow-2xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-                  <span className="text-xs font-semibold text-blue-900 hidden sm:inline" title={googleUser.email || ''}>
-                    Google Agenda
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleSyncGoogleCalendar()}
-                  disabled={isSyncingGoogle}
-                  title="Sincronizar com Google Agenda"
-                  className="p-1 hover:bg-blue-100 rounded text-blue-700 transition-colors cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGoogle ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={handleConnectGoogle}
-                disabled={isConnectingGoogle}
-                title="Conectar com o Google Agenda para sincronizar seus compromissos"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer"
-              >
-                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
-                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                </svg>
-                <span>{isConnectingGoogle ? 'Conectando...' : 'Google Agenda'}</span>
-              </button>
-            )}
-
             <button 
               onClick={() => openNewEventAt()}
               className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all cursor-pointer"
@@ -740,52 +588,6 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
-
-      {/* Banner de Sincronização com Google Agenda */}
-      {!googleUser ? (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-4 py-2.5">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 text-blue-900">
-              <div className="w-6 h-6 rounded-md bg-white border border-blue-200 flex items-center justify-center shrink-0 shadow-2xs">
-                <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
-              </div>
-              <p className="font-medium">
-                <strong className="font-bold text-blue-950">Sincronização com Google Agenda:</strong> Conecte sua conta do Google para manter e salvar todos os agendamentos diretamente no seu calendário.
-              </p>
-            </div>
-            <button
-              onClick={handleConnectGoogle}
-              disabled={isConnectingGoogle}
-              className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg border border-slate-300 shadow-2xs transition-all cursor-pointer text-xs"
-            >
-              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-              </svg>
-              <span>{isConnectingGoogle ? 'Conectando...' : 'Conectar Google Agenda'}</span>
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-emerald-50/70 border-b border-emerald-200/80 px-4 py-1.5">
-          <div className="max-w-7xl mx-auto flex items-center justify-between text-xs text-emerald-900">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Google Agenda conectado ({googleUser.email}) — Agendamentos sincronizados com seu calendário.</span>
-            </div>
-            <button
-              onClick={() => handleSyncGoogleCalendar()}
-              disabled={isSyncingGoogle}
-              className="font-semibold text-emerald-800 hover:text-emerald-950 underline cursor-pointer inline-flex items-center gap-1"
-            >
-              <RefreshCw className={`w-3 h-3 ${isSyncingGoogle ? 'animate-spin' : ''}`} />
-              <span>{isSyncingGoogle ? 'Sincronizando...' : 'Sincronizar agora'}</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -843,7 +645,7 @@ export default function Dashboard() {
 
             {/* Seleção de Profissional / Admin com RBAC */}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
                   <Filter className="w-3.5 h-3.5" /> Agenda de:
                 </span>
@@ -872,6 +674,28 @@ export default function Dashboard() {
               <div className="text-xs text-slate-500">
                 Total ativo: <strong className="text-slate-900">{filteredEvents.length}</strong> compromisso(s)
               </div>
+            </div>
+
+            {/* Busca + limpar filtros */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por título, local, e-mail ou WhatsApp..."
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 focus:outline-none focus:border-emerald-500 placeholder:text-slate-400"
+                />
+              </div>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="shrink-0 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+                >
+                  Limpar filtros
+                </button>
+              )}
             </div>
           </div>
 
@@ -933,10 +757,7 @@ export default function Dashboard() {
                       <div className="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400 text-xs space-y-2">
                         <p>Nenhum compromisso encontrado para os filtros selecionados.</p>
                         <button
-                          onClick={() => {
-                            setActiveCategory('all');
-                            setSelectedTherapist('todos');
-                          }}
+                          onClick={clearFilters}
                           className="text-emerald-600 hover:underline font-medium"
                         >
                           Limpar filtros
@@ -1021,91 +842,40 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* Lateral: Assistente Integrado e Equipe */}
+        {/* Lateral: Equipe */}
         <aside className="space-y-6">
-          {/* Assistente Integrado */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col h-[620px]">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900">Assistente RenovaSer</h3>
-                  <p className="text-[11px] text-slate-500">Agendamento por Texto ou Voz</p>
-                </div>
-              </div>
-
-              {/* Botão Limpar Chat */}
-              <button
-                type="button"
-                onClick={handleClearChat}
-                title="Limpar mensagens da conversa"
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-rose-200 transition-all cursor-pointer shadow-2xs"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Limpar chat</span>
-              </button>
+          {/* Próximos compromissos */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+              <Clock className="w-4 h-4 text-emerald-600" />
+              <h4 className="text-xs font-bold text-slate-800">Próximos compromissos</h4>
             </div>
-
-            {/* Mensagens do Chat */}
-            <div className="flex-1 my-3 space-y-3 overflow-y-auto text-xs pr-1">
-              {chatMessages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`p-3 rounded-xl max-w-[90%] leading-relaxed ${
-                    msg.sender === 'user'
-                      ? 'bg-emerald-600 text-white ml-auto'
-                      : 'bg-slate-100 text-slate-700 mr-auto'
-                  }`}
-                >
-                  <p>{msg.text}</p>
-                  {msg.action === 'open_modal' && (
-                    <button
-                      onClick={() => openNewEventAt()}
-                      className="mt-2.5 w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm text-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Abrir Formulário de Agendamento
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Área de Escrita Ampliada Confortável */}
-            <div className="pt-2 border-t border-slate-100">
-              <div className="bg-slate-50 focus-within:bg-white rounded-xl border border-slate-200 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all shadow-2xs flex flex-col">
-                <textarea
-                  rows={4}
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  placeholder="Escreva sua solicitação aqui com calma (ex: Agendar reunião para dia 25.09.26 às 13 horas com a equipe on-line)..."
-                  className="w-full px-3.5 pt-3 pb-2 text-xs sm:text-[13px] bg-transparent resize-y min-h-[105px] max-h-[220px] focus:outline-none text-slate-800 placeholder:text-slate-400 leading-relaxed block"
-                />
-
-                {/* Barra de Ações Fixada Abaixo do Campo de Texto (Nunca Cobre o Texto) */}
-                <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between gap-2 bg-slate-50/70 rounded-b-xl">
-                  <span className="text-[10px] text-slate-400 select-none">
-                    <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Enter</kbd> envia • <kbd className="font-mono bg-slate-200/80 text-slate-600 px-1 py-0.5 rounded text-[9px]">Shift+Enter</kbd> quebra linha
-                  </span>
-                  <button 
-                    type="button"
-                    onClick={handleSendMessage}
-                    disabled={!chatInput.trim()}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer shrink-0"
+            {upcomingEvents.length === 0 ? (
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Nenhum compromisso futuro para os filtros atuais.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {upcomingEvents.map((evt) => (
+                  <button
+                    key={evt.id}
+                    onClick={() => setSelectedEventForDetails(evt)}
+                    className="w-full text-left p-2.5 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/50 transition-all cursor-pointer"
                   >
-                    <span>Enviar</span>
-                    <Send className="w-3.5 h-3.5" />
+                    <p className="text-xs font-semibold text-slate-800 truncate">{evt.title}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {evt.date.split('-').reverse().join('/')} • {evt.time}
+                    </p>
                   </button>
-                </div>
+                ))}
               </div>
-            </div>
+            )}
+            <button
+              onClick={() => openNewEventAt()}
+              className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Novo agendamento
+            </button>
           </div>
 
           {/* Mini Painel de Profissionais Cadastrados */}
@@ -1126,7 +896,10 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {therapists.map((t) => (
+              {isLoadingTherapists && therapists.length === 0 ? (
+                <p className="text-[11px] text-slate-400">Carregando equipe...</p>
+              ) : (
+              therapists.map((t) => (
                 <div key={t.id} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="truncate pr-2">
                     <p className="font-semibold text-slate-800 truncate">{t.name}</p>
@@ -1145,7 +918,8 @@ export default function Dashboard() {
                     {t.role === 'admin' ? 'Admin' : 'Terapeuta'}
                   </span>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
         </aside>
@@ -1183,6 +957,37 @@ export default function Dashboard() {
         therapists={therapists}
         currentUser={currentUser}
       />
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {eventToDelete && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
+                <Trash2 className="w-4 h-4 text-rose-600" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm">Excluir compromisso?</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Deseja realmente excluir <strong className="text-slate-900">"{eventToDelete.title}"</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setEventToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDeleteEvent}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors cursor-pointer"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: NOVO AGENDAMENTO COM WHATSAPP / E-MAIL OBRIGATÓRIOS PARA NOTIFICAÇÃO */}
       {showNewEventModal && (
