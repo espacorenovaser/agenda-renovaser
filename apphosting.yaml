@@ -1,0 +1,25 @@
+# Firebase App Hosting — Agenda RenovaSer (Next.js 16 + API Routes)
+# Publicação em: agenda.institutorenovaser.com.br
+#
+# Segredos NÃO vão aqui. Configure uma vez com:
+#   firebase login
+#   firebase apphosting:secrets:set NEXT_PUBLIC_SUPABASE_URL
+#   firebase apphosting:secrets:set NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   firebase apphosting:secrets:set SUPABASE_SERVICE_ROLE_KEY
+#   firebase apphosting:secrets:set GOOGLE_CLIENT_ID
+#   firebase apphosting:secrets:set GOOGLE_CLIENT_SECRET
+# E a variável pública de redirect (vai em apphosting.yaml > env, ou também como secret):
+#   GOOGLE_REDIRECT_URI=https://agenda.institutorenovaser.com.br/api/auth/callback/google
+
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 1024
+
+env:
+  - variable: NODE_ENV
+    value: production
+  - variable: GOOGLE_REDIRECT_URI
+    value: https://agenda.institutorenovaser.com.br/api/auth/callback/google
