@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { oauth2Client } from "@/lib/google";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { google } from "googleapis";
 
 export async function GET(req: NextRequest) {
@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     const email = profile.email.toLowerCase();
     const name = profile.name || email;
 
+    const supabase = getSupabaseAdmin();
     await supabase.from("users").upsert(
       {
         email,

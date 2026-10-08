@@ -1,6 +1,6 @@
 export type RoomId = "sala_1" | "sala_2" | "sala_3" | "auditorio";
 export type RoomTipo = "individual" | "auditorio";
-export type Modality = "presencial" | "online";
+export type Modality = "presencial" | "online" | "externo";
 export type Category = "atendimento" | "reuniao" | "evento";
 
 export interface Room {
@@ -19,6 +19,7 @@ export const ROOMS: Room[] = [
 ];
 
 export const ONLINE_ROOM_LABEL = "Online (Google Meet)";
+export const EXTERNO_ROOM_LABEL = "Local do cliente (evento externo)";
 
 export function getRoom(id: string | null | undefined): Room | undefined {
   return ROOMS.find((r) => r.id === id);

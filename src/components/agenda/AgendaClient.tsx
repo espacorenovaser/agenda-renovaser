@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ROOMS, getRoom, ONLINE_ROOM_LABEL } from "@/lib/rooms";
+import { ROOMS, getRoom, ONLINE_ROOM_LABEL, EXTERNO_ROOM_LABEL } from "@/lib/rooms";
 import { formatWhatsAppLink } from "@/lib/whatsapp";
 import type { Session } from "@/lib/auth";
 
@@ -13,7 +13,7 @@ type Appointment = {
   client_email: string | null;
   patient_email?: string | null;
   room_id: string | null;
-  modality: "presencial" | "online";
+  modality: "presencial" | "online" | "externo";
   category: string;
   professional_email: string;
   therapist_email?: string;
@@ -68,6 +68,15 @@ function isValidPhone(v: string): boolean {
   if (ddd.startsWith("0")) return false;
   return true;
 }
+// Sem sala: externo é no local do cliente, o resto é online.
+function placeLabel(a: Appointment): string {
+  if (a.room_id) return getRoom(a.room_id)?.nome ?? a.room_id;
+  return a.modality === "externo" ? EXTERNO_ROOM_LABEL : ONLINE_ROOM_LABEL;
+}
+function placeColor(a: Appointment): string {
+  if (a.room_id) return getRoom(a.room_id)?.cor ?? "#94a3b8";
+  return a.modality === "externo" ? "#a855f7" : "#0ea5e9";
+}
 function profName(email: string, session: Session, professionals?: { email: string; name: string | null }[]): string {
   if (professionals) {
     const found = professionals.find((p) => p.email.toLowerCase() === email.toLowerCase());
@@ -92,10 +101,17 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
   const [showPresenca, setShowPresenca] = useState(false);
 
   const [fTitle, setFTitle] = useState("");
+  const [fDate, setFDate] = useState(safeDateStr(initialDate));
   const [fCliente, setFCliente] = useState("");
   const [fPhone, setFPhone] = useState("");
   const [fClientEmail, setFClientEmail] = useState("");
-  const [fModality, setFModality] = useState<"presencial" | "online">("presencial");
+  const [fModality, setFModality] = useState<"presencial" | "online" | "externo">("presencial");
+  const [fPhoneError, setFPhoneError] = useState("");
+  const [fEmailError, setFEmailError] = useState("");
+  const isExternal = fModality === "externo";
+  const contactLabel = isExternal ? "Responsável pelo Evento" : "Cliente";
+  const contactBlockTitle = isExternal ? "Responsável pelo evento" : "Dados do cliente";
+  const contactEmailLabel = isExternal ? "E-mail do responsável" : "E-mail do cliente";
   const [fRoom, setFRoom] = useState("sala_1");
   const [fCategory, setFCategory] = useState("atendimento");
   const [fStart, setFStart] = useState("09:00");
@@ -163,36 +179,55 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
 
   function openNew(slot?: { date: string; time: string; room?: string }) {
     setEditing(null);
-    setFTitle(""); setFCliente(""); setFPhone(""); setFClientEmail(""); setFCategory("atendimento");
+    setFTitle(""); setFCliente(""); setFPhone(""); setFPhoneError(""); setFClientEmail(""); setFEmailError(""); setFCategory("atendimento");
     setFModality("presencial"); setFRoom(slot?.room ?? "sala_1");
     setFStart(slot?.time ?? "09:00");
     const h = parseInt((slot?.time ?? "09:00").split(":")[0] ?? "9", 10);
     setFEnd(String(h + 1).padStart(2,"0")+":00");
-    if (slot?.date) setDate(slot.date);
+    const d = safeDateStr(slot?.date ?? date);
+    setDate(d);
+    setFDate(d);
     setFProf(session.email);
     setFormError("");
     setShowModal(true);
   }
   function openEdit(a: Appointment) {
     setEditing(a);
-    setFTitle(a.title); setFCliente(a.patient_name ?? ""); setFPhone(a.patient_whatsapp ?? "");
-    setFClientEmail(a.client_email ?? a.patient_email ?? "");
+    setFTitle(a.title); setFCliente(a.patient_name ?? ""); setFPhone((a.patient_whatsapp ?? "").replace(/\D/g, "").slice(0, 13)); setFPhoneError("");
+    setFClientEmail((a.client_email ?? a.patient_email ?? "").slice(0, 120)); setFEmailError("");
     setFCategory(a.category); setFModality(a.modality); setFRoom(a.room_id ?? "sala_1");
     setFStart(fmtTime(a.start_at)); setFEnd(fmtTime(a.end_at));
+    const d = safeDateStr(new Date(a.start_at).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
+    setFDate(d);
     setFProf(a.professional_email ?? a.therapist_email ?? session.email);
     setFormError("");
     setShowModal(true);
   }
 
+  function handlePhoneChange(v: string) {
+    const digits = v.replace(/\D/g, "").slice(0, 13);
+    setFPhone(digits);
+    if (!digits) { setFPhoneError(""); return; }
+    setFPhoneError(isValidPhone(digits) ? "" : "Use só números com DDD (10 a 13 dígitos, ex: 47999998888).");
+  }
+  function handleEmailChange(v: string) {
+    const clean = v.slice(0, 120);
+    setFClientEmail(clean);
+    const t = clean.trim();
+    if (!t) { setFEmailError(""); return; }
+    setFEmailError(isValidEmail(t) ? "" : "Confira o e-mail (ex: nome@email.com).");
+  }
+
   async function submit() {
     setFormError("");
     if (!fTitle.trim()) { setFormError("Informe o título"); return; }
+    const dateStr = safeDateStr(fDate);
     const emailTrim = fClientEmail.trim();
-    if (emailTrim && !isValidEmail(emailTrim)) { setFormError("Confira o e-mail do cliente: parece incompleto (ex: nome@email.com)."); return; }
+    if (emailTrim && !isValidEmail(emailTrim)) { setFormError("Confira o e-mail: parece incompleto (ex: nome@email.com)."); setFEmailError("Confira o e-mail (ex: nome@email.com)."); return; }
     const phoneTrim = fPhone.trim();
-    if (phoneTrim && !isValidPhone(phoneTrim)) { setFormError("Confira o WhatsApp: use DDD + número (ex: 47999998888)."); return; }
-    const start_at = toISO(date, fStart);
-    const end_at = toISO(date, fEnd);
+    if (phoneTrim && !isValidPhone(phoneTrim)) { setFormError("Confira o WhatsApp: use só números com DDD (ex: 47999998888)."); setFPhoneError("Use só números com DDD (10 a 13 dígitos, ex: 47999998888)."); return; }
+    const start_at = toISO(dateStr, fStart);
+    const end_at = toISO(dateStr, fEnd);
     if (new Date(end_at) <= new Date(start_at)) { setFormError("Horário final deve ser após o inicial"); return; }
     setSaving(true);
     const isReuniaoEquipe = fCategory === "reuniao" && fTitle.toLowerCase().includes("equipe");
@@ -202,7 +237,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
       patient_name: fCliente.trim() || null,
       patient_whatsapp: fPhone.replace(/\D/g,"") || null,
       client_email: fClientEmail.trim() || null,
-      room_id: fModality === "online" ? null : fRoom,
+      room_id: fModality === "presencial" ? fRoom : null,
       modality: fModality,
       category: fCategory,
       professional_email: fProf,
@@ -216,6 +251,8 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     setSaving(false);
     if (!res.ok) { setFormError(data.error ?? "Erro ao salvar"); return; }
     setShowModal(false);
+    setDate(dateStr);
+    setFDate(dateStr);
     load();
   }
 
@@ -380,9 +417,9 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                 <div className="w-20 shrink-0 border-r bg-gray-50 text-xs text-gray-500 flex items-start justify-center pt-2">{h}</div>
                 <div className="flex-1 p-2 flex flex-wrap gap-2 items-center">
                   {startingHere.map(a=> {
-                    const room = a.room_id ? getRoom(a.room_id)?.nome ?? a.room_id : ONLINE_ROOM_LABEL;
+                    const room = placeLabel(a);
                     const time = fmtTime(a.start_at) + "–" + fmtTime(a.end_at);
-                    const roomColor = a.room_id ? getRoom(a.room_id)?.cor : "#0ea5e9";
+                    const roomColor = placeColor(a);
                     return (
                       <div key={a.id} className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[220px] shadow-sm" style={{borderLeft: `4px solid ${roomColor}`}}>
                         <div className="font-medium">{a.title}</div>
@@ -400,7 +437,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                     );
                   })}
                   {continuingHere.map(a=> {
-                    const roomColor = a.room_id ? getRoom(a.room_id)?.cor : "#0ea5e9";
+                    const roomColor = placeColor(a);
                     return (
                       <div key={`cont-${a.id}-${h}`} className="text-xs px-3 py-1 rounded-full border flex items-center gap-2 opacity-60" style={{borderColor: roomColor, background: `${roomColor}18`}}>
                         <span className="w-2 h-2 rounded-full" style={{background: roomColor}} />
@@ -445,8 +482,8 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                       <div className="space-y-1 mt-2">
                         {list.map(a=> {
                           const mine = canManage(a);
-                          const room = a.room_id ? getRoom(a.room_id)?.nome ?? a.room_id : ONLINE_ROOM_LABEL;
-                          const roomColor = a.room_id ? getRoom(a.room_id)?.cor : "#0ea5e9";
+                          const room = placeLabel(a);
+                          const roomColor = placeColor(a);
                           return (
                             <div key={a.id} className={`text-[11px] border rounded px-2 py-1 bg-white ${mine ? "" : "opacity-70"}`} style={{borderLeft: `3px solid ${roomColor}`}} title={`${a.title} ${fmtTime(a.start_at)}–${fmtTime(a.end_at)} · ${room}${mine ? "" : " (somente visualização)"}`}>
                               <div className="truncate font-medium">{fmtTime(a.start_at)} {a.title}</div>
@@ -467,19 +504,31 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-auto">
-            <h2 className="font-semibold">{editing? "Editar agendamento":"Novo agendamento"} — {fmtDateBR(date)}</h2>
+        <div className="fixed inset-0 bg-black/40 flex items-start sm:items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-4 sm:p-6 space-y-4 my-4 sm:my-0 max-h-[92vh] overflow-auto">
+            <h2 className="font-semibold text-base sm:text-lg">{editing? "Editar agendamento":"Novo agendamento"} — {fmtDateBR(fDate)}</h2>
             {formError && <div className="sticky top-0 z-10 text-sm font-medium text-red-800 bg-red-100 border-2 border-red-400 rounded-xl px-4 py-3 shadow-sm">⚠️ {formError}</div>}
-            <label className="block text-sm">Título*<input value={fTitle} onChange={e=>setFTitle(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="Ex: Reunião Equipe, Atendimento Maria" /></label>
+            <label className="block text-sm">Título*<input value={fTitle} onChange={e=>setFTitle(e.target.value)} maxLength={120} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="Ex: Reunião Equipe, Atendimento Maria" /></label>
+            <label className="block text-sm">Categoria
+              <select value={fCategory} onChange={e=>setFCategory(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
+                <option value="atendimento">Atendimento</option>
+                <option value="reuniao">Reunião</option>
+                <option value="evento">Evento</option>
+              </select>
+            </label>
+            <label className="block text-sm">Data do agendamento<input type="date" value={fDate} onChange={e=>setFDate(safeDateStr(e.target.value))} className="mt-1 w-full border rounded-lg px-3 py-2" /></label>
             <div className="border-2 border-gray-300 rounded-xl p-4 bg-gray-50 space-y-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Dados do cliente</div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-sm">Cliente<input value={fCliente} onChange={e=>setFCliente(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="Nome (opcional p/ reuniões)" /></label>
-                <label className="block text-sm">WhatsApp<input value={fPhone} onChange={e=>setFPhone(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="479..." /></label>
+              <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{contactBlockTitle}</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block text-sm">{contactLabel}<input value={fCliente} onChange={e=>setFCliente(e.target.value)} maxLength={120} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder={isExternal ? "Nome do responsável" : "Nome (opcional p/ reuniões)"} /></label>
+                <label className="block text-sm">WhatsApp
+                  <input value={fPhone} onChange={e=>handlePhoneChange(e.target.value)} inputMode="numeric" maxLength={13} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="47999998888" />
+                  {fPhoneError && <span className="text-[11px] text-red-600">{fPhoneError}</span>}
+                </label>
               </div>
-              <label className="block text-sm">E-mail do cliente
-                <input type="email" value={fClientEmail} onChange={e=>setFClientEmail(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="cliente@email.com — recebe convite + pop-up 60/30min" />
+              <label className="block text-sm">{contactEmailLabel}
+                <input type="email" value={fClientEmail} onChange={e=>handleEmailChange(e.target.value)} maxLength={120} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="cliente@email.com — recebe convite + pop-up 60/30min" />
+                {fEmailError && <span className="text-[11px] text-red-600">{fEmailError}</span>}
               </label>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -490,6 +539,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
               <select value={fModality} onChange={e=>setFModality(e.target.value as any)} className="mt-1 w-full border rounded-lg px-3 py-2">
                 <option value="presencial">Presencial</option>
                 <option value="online">Online (não ocupa sala)</option>
+                <option value="externo">Evento externo — local do cliente (não ocupa sala)</option>
               </select>
             </label>
             {fModality==="presencial" && (
@@ -499,13 +549,6 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                 </select>
               </label>
             )}
-            <label className="block text-sm">Categoria
-              <select value={fCategory} onChange={e=>setFCategory(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
-                <option value="atendimento">Atendimento</option>
-                <option value="reuniao">Reunião</option>
-                <option value="evento">Evento</option>
-              </select>
-            </label>
             {session.isAdmin && (
               <label className="block text-sm">Profissional
                 <select value={fProf} onChange={e=>setFProf(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">

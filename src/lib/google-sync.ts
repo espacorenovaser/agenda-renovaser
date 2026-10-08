@@ -1,10 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import { oauth2Client } from "@/lib/google";
-
-function getSupabase() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-}
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export async function syncToGoogleCalendar(opts: {
   summary: string;
@@ -14,7 +10,7 @@ export async function syncToGoogleCalendar(opts: {
   attendees: string[];
 }): Promise<string | null> {
   // tenta pegar token do primeiro admin que tem refresh_token — em produção, ideal é usar o token do profissional
-  const supabase = getSupabase();
+  const supabase = getSupabaseAdmin();
   const { data: users } = await supabase
     .from("users")
     .select("google_refresh_token, google_access_token, email")

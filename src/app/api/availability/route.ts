@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getSession } from "@/lib/auth";
 
 // GET /api/availability?start=...&end=...
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+
   const start = req.nextUrl.searchParams.get("start");
   const end = req.nextUrl.searchParams.get("end");
   if (!start || !end) return NextResponse.json({ error: "Informe start e end" }, { status: 400 });

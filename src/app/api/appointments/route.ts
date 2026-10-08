@@ -74,13 +74,21 @@ export async function POST(req: NextRequest) {
     ? String(body.professional_email ?? body.therapist_email ?? session.email).trim().toLowerCase()
     : sessionMail;
 
+  const modality = String(body.modality ?? "presencial");
+  if (!["presencial", "online", "externo"].includes(modality)) {
+    return NextResponse.json({ error: "Modalidade inválida." }, { status: 400 });
+  }
+  const roomId = modality === "presencial" ? body.room_id ?? null : null;
+  if (modality === "presencial" && !roomId) {
+    return NextResponse.json({ error: "Agendamento presencial exige sala." }, { status: 400 });
+  }
   const emailRaw = String(body.client_email ?? body.patient_email ?? "").trim();
   if (emailRaw && !isValidEmail(emailRaw)) {
     return NextResponse.json({ error: "Confira o e-mail do cliente: parece incompleto (ex: nome@email.com)." }, { status: 400 });
   }
   const phoneRaw = String(body.patient_whatsapp ?? "").trim();
   if (phoneRaw && !isValidPhone(phoneRaw)) {
-    return NextResponse.json({ error: "Confira o WhatsApp: use DDD + número (ex: 47999998888)." }, { status: 400 });
+    return NextResponse.json({ error: "Confira o WhatsApp: use só números com DDD (ex: 47999998888)." }, { status: 400 });
   }
 
   const supabase = getSupabaseAdmin();
@@ -89,8 +97,8 @@ export async function POST(req: NextRequest) {
     p_patient_name: body.patient_name ?? null,
     p_patient_whatsapp: body.patient_whatsapp ?? null,
     p_patient_email: body.client_email ?? body.patient_email ?? null,
-    p_room_id: body.modality === "online" ? null : body.room_id,
-    p_modality: body.modality,
+    p_room_id: roomId,
+    p_modality: modality,
     p_category: body.category ?? "atendimento",
     p_start_at: body.start_at,
     p_end_at: body.end_at,
@@ -118,7 +126,7 @@ export async function POST(req: NextRequest) {
   if (clientEmail || participants.length > 0) {
     try {
       const attendees = [clientEmail, ...participants, profEmail].filter(Boolean) as string[];
-      const roomLabel = body.modality === "online" ? "Online" : body.room_id;
+      const roomLabel = modality === "presencial" ? body.room_id : modality === "externo" ? "Local do cliente" : "Online";
       const eventId = await syncToGoogleCalendar({
         summary: body.title,
         description: `${body.patient_name ? "Cliente: "+body.patient_name+"\\n" : ""}Sala: ${roomLabel} — Instituto RenovaSer`,
