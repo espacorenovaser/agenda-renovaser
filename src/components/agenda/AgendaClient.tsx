@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ROOMS, getRoom, ONLINE_ROOM_LABEL, EXTERNO_ROOM_LABEL } from "@/lib/rooms";
+import { ROOMS, getRoom, ONLINE_ROOM_LABEL, EXTERNO_ROOM_LABEL, EVENTO_TIPOS, eventoLabel } from "@/lib/rooms";
 import { formatWhatsAppLink } from "@/lib/whatsapp";
 import type { Session } from "@/lib/auth";
 
@@ -15,6 +15,7 @@ type Appointment = {
   room_id: string | null;
   modality: "presencial" | "online" | "externo";
   category: string;
+  evento_tipo?: string | null;
   professional_email: string;
   therapist_email?: string;
   start_at: string;
@@ -114,6 +115,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
   const contactEmailLabel = isExternal ? "E-mail do responsável" : "E-mail do cliente";
   const [fRoom, setFRoom] = useState("sala_1");
   const [fCategory, setFCategory] = useState("atendimento");
+  const [fEventoTipo, setFEventoTipo] = useState("");
   const [fStart, setFStart] = useState("09:00");
   const [fEnd, setFEnd] = useState("10:00");
   const [fProf, setFProf] = useState(session.email);
@@ -179,7 +181,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
 
   function openNew(slot?: { date: string; time: string; room?: string }) {
     setEditing(null);
-    setFTitle(""); setFCliente(""); setFPhone(""); setFPhoneError(""); setFClientEmail(""); setFEmailError(""); setFCategory("atendimento");
+    setFTitle(""); setFCliente(""); setFPhone(""); setFPhoneError(""); setFClientEmail(""); setFEmailError(""); setFCategory("atendimento"); setFEventoTipo("");
     setFModality("presencial"); setFRoom(slot?.room ?? "sala_1");
     setFStart(slot?.time ?? "09:00");
     const h = parseInt((slot?.time ?? "09:00").split(":")[0] ?? "9", 10);
@@ -195,7 +197,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     setEditing(a);
     setFTitle(a.title); setFCliente(a.patient_name ?? ""); setFPhone((a.patient_whatsapp ?? "").replace(/\D/g, "").slice(0, 13)); setFPhoneError("");
     setFClientEmail((a.client_email ?? a.patient_email ?? "").slice(0, 120)); setFEmailError("");
-    setFCategory(a.category); setFModality(a.modality); setFRoom(a.room_id ?? "sala_1");
+    setFCategory(a.category); setFEventoTipo(a.evento_tipo ?? ""); setFModality(a.modality); setFRoom(a.room_id ?? "sala_1");
     setFStart(fmtTime(a.start_at)); setFEnd(fmtTime(a.end_at));
     const d = safeDateStr(new Date(a.start_at).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
     setFDate(d);
@@ -221,6 +223,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
   async function submit() {
     setFormError("");
     if (!fTitle.trim()) { setFormError("Informe o título"); return; }
+    if (fCategory === "evento" && !fEventoTipo) { setFormError("Escolha o tipo do evento (Curso, Treinamento, Formação, Workshop ou Atendimento em grupo)."); return; }
     const dateStr = safeDateStr(fDate);
     const emailTrim = fClientEmail.trim();
     if (emailTrim && !isValidEmail(emailTrim)) { setFormError("Confira o e-mail: parece incompleto (ex: nome@email.com)."); setFEmailError("Confira o e-mail (ex: nome@email.com)."); return; }
@@ -240,6 +243,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
       room_id: fModality === "presencial" ? fRoom : null,
       modality: fModality,
       category: fCategory,
+      evento_tipo: fCategory === "evento" ? fEventoTipo : null,
       professional_email: fProf,
       start_at, end_at,
       participants,
@@ -423,6 +427,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                     return (
                       <div key={a.id} className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[220px] shadow-sm" style={{borderLeft: `4px solid ${roomColor}`}}>
                         <div className="font-medium">{a.title}</div>
+                        {eventoLabel(a.evento_tipo) && <div className="text-xs font-semibold text-amber-700">{eventoLabel(a.evento_tipo)}</div>}
                         <div className="text-xs text-gray-500">{time} · {room}</div>
                         {a.patient_name && <div className="text-xs text-gray-700">{a.patient_name}</div>}
                         <div className="text-[11px] text-gray-400">{profName(a.professional_email ?? a.therapist_email ?? "", session, professionals)}</div>
@@ -485,7 +490,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                           const room = placeLabel(a);
                           const roomColor = placeColor(a);
                           return (
-                            <div key={a.id} className={`text-[11px] border rounded px-2 py-1 bg-white ${mine ? "" : "opacity-70"}`} style={{borderLeft: `3px solid ${roomColor}`}} title={`${a.title} ${fmtTime(a.start_at)}–${fmtTime(a.end_at)} · ${room}${mine ? "" : " (somente visualização)"}`}>
+                            <div key={a.id} className={`text-[11px] border rounded px-2 py-1 bg-white ${mine ? "" : "opacity-70"}`} style={{borderLeft: `3px solid ${roomColor}`}} title={`${a.title}${eventoLabel(a.evento_tipo) ? ` (${eventoLabel(a.evento_tipo)})` : ""} ${fmtTime(a.start_at)}–${fmtTime(a.end_at)} · ${room}${mine ? "" : " (somente visualização)"}`}>
                               <div className="truncate font-medium">{fmtTime(a.start_at)} {a.title}</div>
                               <div className="truncate text-gray-500">{mine ? profName(a.professional_email ?? a.therapist_email ?? "", session, professionals) : "Reservado"}</div>
                             </div>
@@ -519,6 +524,14 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
             <label className="block text-sm">Data do agendamento<input type="date" value={fDate} onChange={e=>setFDate(safeDateStr(e.target.value))} className="mt-1 w-full border rounded-lg px-3 py-2" /></label>
             <div className="border-2 border-gray-300 rounded-xl p-4 bg-gray-50 space-y-3">
               <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{contactBlockTitle}</div>
+              {fCategory === "evento" && (
+                <label className="block text-sm font-medium">Tipo do evento*
+                  <select value={fEventoTipo} onChange={e=>setFEventoTipo(e.target.value)} className="mt-1 w-full border-2 border-amber-300 bg-amber-50 rounded-lg px-3 py-2">
+                    <option value="">Selecione…</option>
+                    {EVENTO_TIPOS.map(t=> <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                </label>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block text-sm">{contactLabel}<input value={fCliente} onChange={e=>setFCliente(e.target.value)} maxLength={120} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder={isExternal ? "Nome do responsável" : "Nome (opcional p/ reuniões)"} /></label>
                 <label className="block text-sm">WhatsApp

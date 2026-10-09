@@ -36,3 +36,22 @@ export const CATEGORY_COLOR: Record<Category, string> = {
   reuniao: "bg-sky-500",
   evento: "bg-amber-500",
 };
+
+// Tipo do evento — só usado quando category = 'evento'
+export const EVENTO_TIPOS = [
+  { id: "curso", label: "Curso" },
+  { id: "treinamento", label: "Treinamento" },
+  { id: "formacao", label: "Formação" },
+  { id: "workshop", label: "Workshop" },
+  { id: "atendimento_grupo", label: "Atendimento em grupo" },
+] as const;
+
+export type EventoTipo = (typeof EVENTO_TIPOS)[number]["id"];
+
+export function isEventoTipo(v: unknown): v is EventoTipo {
+  return EVENTO_TIPOS.some((t) => t.id === v);
+}
+
+export function eventoLabel(id: string | null | undefined): string | null {
+  return EVENTO_TIPOS.find((t) => t.id === id)?.label ?? null;
+}

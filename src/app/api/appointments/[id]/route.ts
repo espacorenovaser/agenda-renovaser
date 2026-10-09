@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getSession } from "@/lib/auth";
+import { isEventoTipo } from "@/lib/rooms";
 
 // Dono do agendamento — funciona antes e depois da migração profissional/terapeuta
 function ownerOf(row: any): string {
@@ -72,6 +73,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Confira o WhatsApp: use só números com DDD (ex: 47999998888)." }, { status: 400 });
   }
 
+  const category = String(body.category ?? "atendimento");
+  const eventoTipoRaw = body.evento_tipo ?? null;
+  if (eventoTipoRaw && !isEventoTipo(eventoTipoRaw)) {
+    return NextResponse.json({ error: "Tipo de evento inválido." }, { status: 400 });
+  }
+  if (category === "evento" && !eventoTipoRaw) {
+    return NextResponse.json({ error: "Escolha o tipo do evento (Curso, Treinamento, Formação, Workshop ou Atendimento em grupo)." }, { status: 400 });
+  }
+  const eventoTipo = category === "evento" ? eventoTipoRaw : null;
+
   const base = {
     p_id: id,
     p_title: body.title,
@@ -80,7 +91,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     p_patient_email: body.client_email ?? body.patient_email ?? null,
     p_room_id: roomId,
     p_modality: modality,
-    p_category: body.category ?? "atendimento",
+    p_category: category,
     p_start_at: body.start_at,
     p_end_at: body.end_at,
   };
@@ -96,6 +107,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const status = msg.includes("Conflito") ? 409 : 400;
     return NextResponse.json({ error: msg }, { status });
   }
+
+  // evento_tipo fora da RPC: a função do banco não conhece a coluna
+  const { error: tipoError } = await supabase.from("appointments").update({ evento_tipo: eventoTipo }).eq("id", id);
+  if (tipoError) console.error("Falha ao gravar evento_tipo:", tipoError.message);
+
   return NextResponse.json(data);
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getSession } from "@/lib/auth";
 import { syncToGoogleCalendar } from "@/lib/google-sync";
+import { isEventoTipo } from "@/lib/rooms";
 
 function isValidEmail(v: string): boolean {
   const s = (v ?? "").trim();
@@ -91,6 +92,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Confira o WhatsApp: use só números com DDD (ex: 47999998888)." }, { status: 400 });
   }
 
+  const category = String(body.category ?? "atendimento");
+  const eventoTipoRaw = body.evento_tipo ?? null;
+  if (eventoTipoRaw && !isEventoTipo(eventoTipoRaw)) {
+    return NextResponse.json({ error: "Tipo de evento inválido." }, { status: 400 });
+  }
+  if (category === "evento" && !eventoTipoRaw) {
+    return NextResponse.json({ error: "Escolha o tipo do evento (Curso, Treinamento, Formação, Workshop ou Atendimento em grupo)." }, { status: 400 });
+  }
+  const eventoTipo = category === "evento" ? eventoTipoRaw : null;
+
   const supabase = getSupabaseAdmin();
   const base = {
     p_title: body.title,
@@ -99,7 +110,7 @@ export async function POST(req: NextRequest) {
     p_patient_email: body.client_email ?? body.patient_email ?? null,
     p_room_id: roomId,
     p_modality: modality,
-    p_category: body.category ?? "atendimento",
+    p_category: category,
     p_start_at: body.start_at,
     p_end_at: body.end_at,
     p_created_by: session.email,
@@ -117,6 +128,12 @@ export async function POST(req: NextRequest) {
     const msg = error.message ?? "Erro ao criar agendamento";
     const status = msg.includes("Conflito") ? 409 : 400;
     return NextResponse.json({ error: msg }, { status });
+  }
+
+  // evento_tipo fora da RPC: as funções do banco não conhecem a coluna
+  if (data?.id) {
+    const { error: tipoError } = await supabase.from("appointments").update({ evento_tipo: eventoTipo }).eq("id", data.id);
+    if (tipoError) console.error("Falha ao gravar evento_tipo:", tipoError.message);
   }
 
   // se tem e-mail do cliente ou é reunião, sincroniza com Google (60 + 30 min popup)
