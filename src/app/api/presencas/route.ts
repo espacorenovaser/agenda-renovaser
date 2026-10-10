@@ -6,9 +6,15 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   const date = req.nextUrl.searchParams.get("date");
+  const from = req.nextUrl.searchParams.get("from");
+  const to = req.nextUrl.searchParams.get("to");
   const supabase = getSupabaseAdmin();
   let q = supabase.from("presencas").select("*").order("start_at");
-  if (date) q = q.eq("date", date);
+  if (date) {
+    q = q.eq("date", date);
+  } else if (from && to) {
+    q = q.gte("date", from).lte("date", to);
+  }
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);

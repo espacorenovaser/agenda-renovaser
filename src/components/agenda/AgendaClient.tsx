@@ -157,8 +157,8 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     } else {
       const r = weekRange(date);
       url += `?from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}`;
-      // semana: busca todas as presenças da semana
-      presUrl = `/api/presencas`;
+      // semana: busca todas as presenças da semana com intervalo from/to
+      presUrl = `/api/presencas?from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}`;
     }
     const [aRes, pRes] = await Promise.all([fetch(url), fetch(presUrl)]);
     const data = await aRes.json();
@@ -479,25 +479,44 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                     const t = new Date(a.start_at);
                     return !Number.isNaN(t.getTime()) && t.toLocaleDateString("en-CA",{timeZone:"America/Sao_Paulo"})===d;
                   }).sort((x, y) => new Date(x.start_at).getTime() - new Date(y.start_at).getTime());
+                  const dayPresencas = presencas.filter(p => p.date === d);
                   const label = new Date(`${safeDateStr(d)}T12:00:00-03:00`).toLocaleDateString("pt-BR",{weekday:"short", day:"2-digit", month:"2-digit"});
                   const isSelected = d===date;
                   return (
-                    <div key={d} className={`border rounded-lg p-2 ${isSelected?"ring-2 ring-emerald-500":""}`}>
-                      <button onClick={()=>{ setDate(d); setView("dia"); }} className="text-xs font-semibold capitalize hover:underline" title="Abrir este dia">{label}</button>
-                      <div className="space-y-1 mt-2">
-                        {list.map(a=> {
-                          const mine = canManage(a);
-                          const room = placeLabel(a);
-                          const roomColor = placeColor(a);
-                          return (
-                            <div key={a.id} className={`text-[11px] border rounded px-2 py-1 bg-white ${mine ? "" : "opacity-70"}`} style={{borderLeft: `3px solid ${roomColor}`}} title={`${a.title}${eventoLabel(a.evento_tipo) ? ` (${eventoLabel(a.evento_tipo)})` : ""} ${fmtTime(a.start_at)}–${fmtTime(a.end_at)} · ${room}${mine ? "" : " (somente visualização)"}`}>
-                              <div className="truncate font-medium">{fmtTime(a.start_at)} {a.title}</div>
-                              <div className="truncate text-gray-500">{mine ? profName(a.professional_email ?? a.therapist_email ?? "", session, professionals) : "Reservado"}</div>
-                            </div>
-                          );
-                        })}
-                        {list.length===0 && <div className="text-[11px] text-gray-400">Livre</div>}
-                        <button onClick={()=> openNew({date:d, time:"09:00"})} className="text-[11px] text-emerald-600 hover:text-emerald-700">+ agendar</button>
+                    <div key={d} className={`border rounded-lg p-2 flex flex-col justify-between ${isSelected?"ring-2 ring-emerald-500":""}`}>
+                      <div>
+                        <button onClick={()=>{ setDate(d); setView("dia"); }} className="text-xs font-semibold capitalize hover:underline" title="Abrir este dia">{label}</button>
+
+                        {/* Quem está no instituto neste dia */}
+                        {dayPresencas.length > 0 && (
+                          <div className="mt-1.5 mb-2 bg-emerald-50 border border-emerald-200 rounded p-1.5 space-y-1">
+                            <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">Instituto:</div>
+                            {dayPresencas.map(p => (
+                              <div key={p.id} className="text-[11px] text-emerald-900 bg-emerald-100/70 rounded px-1.5 py-0.5 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
+                                <span className="truncate font-medium">{profName(p.professional_email, session, professionals)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="space-y-1 mt-2">
+                          {list.map(a=> {
+                            const mine = canManage(a);
+                            const room = placeLabel(a);
+                            const roomColor = placeColor(a);
+                            return (
+                              <div key={a.id} className={`text-[11px] border rounded px-2 py-1 bg-white ${mine ? "" : "opacity-70"}`} style={{borderLeft: `3px solid ${roomColor}`}} title={`${a.title}${eventoLabel(a.evento_tipo) ? ` (${eventoLabel(a.evento_tipo)})` : ""} ${fmtTime(a.start_at)}–${fmtTime(a.end_at)} · ${room}${mine ? "" : " (somente visualização)"}`}>
+                                <div className="truncate font-medium">{fmtTime(a.start_at)} {a.title}</div>
+                                <div className="truncate text-gray-500">{mine ? profName(a.professional_email ?? a.therapist_email ?? "", session, professionals) : "Reservado"}</div>
+                              </div>
+                            );
+                          })}
+                          {list.length===0 && dayPresencas.length===0 && <div className="text-[11px] text-gray-400">Livre</div>}
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-2 border-t">
+                        <button onClick={()=> openNew({date:d, time:"09:00"})} className="text-[11px] text-emerald-600 hover:text-emerald-700 block w-full text-center">+ agendar</button>
                       </div>
                     </div>
                   );
@@ -513,15 +532,19 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
           <div className="bg-white rounded-2xl w-full max-w-lg p-4 sm:p-6 space-y-4 my-4 sm:my-0 max-h-[92vh] overflow-auto">
             <h2 className="font-semibold text-base sm:text-lg">{editing? "Editar agendamento":"Novo agendamento"} — {fmtDateBR(fDate)}</h2>
             {formError && <div className="sticky top-0 z-10 text-sm font-medium text-red-800 bg-red-100 border-2 border-red-400 rounded-xl px-4 py-3 shadow-sm">⚠️ {formError}</div>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block text-sm font-semibold">Data do agendamento*
+                <input type="date" value={fDate} onChange={e=>setFDate(safeDateStr(e.target.value))} className="mt-1 w-full border-2 border-emerald-500 bg-emerald-50/30 rounded-lg px-3 py-2 font-medium" />
+              </label>
+              <label className="block text-sm">Categoria
+                <select value={fCategory} onChange={e=>setFCategory(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
+                  <option value="atendimento">Atendimento</option>
+                  <option value="reuniao">Reunião</option>
+                  <option value="evento">Evento</option>
+                </select>
+              </label>
+            </div>
             <label className="block text-sm">Título*<input value={fTitle} onChange={e=>setFTitle(e.target.value)} maxLength={120} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder="Ex: Reunião Equipe, Atendimento Maria" /></label>
-            <label className="block text-sm">Categoria
-              <select value={fCategory} onChange={e=>setFCategory(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
-                <option value="atendimento">Atendimento</option>
-                <option value="reuniao">Reunião</option>
-                <option value="evento">Evento</option>
-              </select>
-            </label>
-            <label className="block text-sm">Data do agendamento<input type="date" value={fDate} onChange={e=>setFDate(safeDateStr(e.target.value))} className="mt-1 w-full border rounded-lg px-3 py-2" /></label>
             <div className="border-2 border-gray-300 rounded-xl p-4 bg-gray-50 space-y-3">
               <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{contactBlockTitle}</div>
               {fCategory === "evento" && (
