@@ -29,9 +29,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
             <Link href="/agenda" className="text-sm underline">Ir para a agenda</Link>
           </div>
         ) : (
-          <Link href="/api/auth/google" className="mt-6 inline-flex w-full justify-center px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow">
+          <a href="/api/auth/google" className="mt-6 inline-flex w-full justify-center px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow">
             Conectar com Google
-          </Link>
+          </a>
         )}
       </div>
     </main>

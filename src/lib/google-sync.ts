@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { oauth2Client } from "@/lib/google";
+import { createOAuth2Client } from "@/lib/google";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export async function syncToGoogleCalendar(opts: {
@@ -20,6 +20,7 @@ export async function syncToGoogleCalendar(opts: {
   const user = users?.[0];
   if (!user?.google_refresh_token) return null;
 
+  const oauth2Client = createOAuth2Client();
   oauth2Client.setCredentials({
     access_token: user.google_access_token,
     refresh_token: user.google_refresh_token,
