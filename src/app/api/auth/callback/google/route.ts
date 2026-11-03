@@ -39,15 +39,16 @@ export async function GET(req: NextRequest) {
     const name = profile.name || email;
 
     const supabase = getSupabaseAdmin();
+    const user = {
+      email,
+      name,
+      google_account_id: profile.id,
+      google_access_token: tokens.access_token,
+      token_expires_at: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
+      ...(tokens.refresh_token ? { google_refresh_token: tokens.refresh_token } : {}),
+    };
     const { error: upsertError } = await supabase.from("users").upsert(
-      {
-        email,
-        name,
-        google_account_id: profile.id,
-        google_access_token: tokens.access_token,
-        google_refresh_token: tokens.refresh_token,
-        token_expires_at: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
-      },
+      user,
       { onConflict: "email" }
     );
     if (upsertError) throw upsertError;

@@ -6,7 +6,6 @@ export async function GET() {
   const state = randomBytes(32).toString('hex');
   const url = createOAuth2Client().generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
     scope: SCOPES,
     state,
   });
