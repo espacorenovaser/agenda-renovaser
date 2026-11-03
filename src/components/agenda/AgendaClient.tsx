@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useState } from "react";
-import { ROOMS, getRoom, ONLINE_ROOM_LABEL, EXTERNO_ROOM_LABEL, EVENTO_TIPOS, eventoLabel } from "@/lib/rooms";
+import { ROOMS, getRoom, ONLINE_ROOM_LABEL, EXTERNO_ROOM_LABEL, EVENTO_TIPOS, EVENTO_CUIDADOS, eventoLabel } from "@/lib/rooms";
 import { formatWhatsAppLink } from "@/lib/whatsapp";
 import type { Session } from "@/lib/auth";
 
@@ -35,6 +35,11 @@ type Appointment = {
   recurrence_frequency?: "weekly" | "monthly" | null;
   recurrence_index?: number | null;
   recurrence_count?: number | null;
+  event_professionals?: string[];
+  event_attendees?: { id: string; name: string; email: string | null; whatsapp: string | null }[];
+  event_description?: string | null;
+  event_care_type?: string | null;
+  event_capacity?: number | null;
 };
 type Presenca = { id: string; professional_email: string; date: string; start_at: string; end_at: string; observacao: string | null };
 
@@ -112,6 +117,7 @@ const MEETING_TEMPLATES = [
 ];
 
 type MeetingActionItem = { id: string; text: string; owner_email: string | null; due_date: string | null; done: boolean };
+type EventAttendee = { id: string; name: string; email: string; whatsapp: string };
 
 export default function AgendaClient({ initialView, initialDate, session }: { initialView: string; initialDate: string; session: Session }) {
   const [view, setView] = useState(initialView);
@@ -142,6 +148,11 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
   const [fRoom, setFRoom] = useState("sala_1");
   const [fCategory, setFCategory] = useState("atendimento");
   const [fEventoTipo, setFEventoTipo] = useState("");
+  const [fEventCareType, setFEventCareType] = useState("");
+  const [fEventProfessionals, setFEventProfessionals] = useState<string[]>([]);
+  const [fEventAttendees, setFEventAttendees] = useState<EventAttendee[]>([]);
+  const [fEventDescription, setFEventDescription] = useState("");
+  const [fEventCapacity, setFEventCapacity] = useState("");
   const [fStart, setFStart] = useState("09:00");
   const [fEnd, setFEnd] = useState("10:00");
   const [fProf, setFProf] = useState(session.email);
@@ -157,7 +168,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
   const [fMeetingMinutes, setFMeetingMinutes] = useState("");
   const [fActionItems, setFActionItems] = useState<MeetingActionItem[]>([]);
   const [fReminderMinutes, setFReminderMinutes] = useState<number[]>([60, 30]);
-  const [fRecurrence, setFRecurrence] = useState<"" | "weekly" | "monthly">("");
+  const [fRecurrence, setFRecurrence] = useState<"" | "daily" | "weekly" | "monthly">("");
   const [fRecurrenceCount, setFRecurrenceCount] = useState(4);
   const [fUpdateSeries, setFUpdateSeries] = useState(false);
   const [availabilitySuggestions, setAvailabilitySuggestions] = useState<{ start_at: string; end_at: string; time: string }[]>([]);
@@ -228,6 +239,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
   function openNew(slot?: { date: string; time: string; room?: string }) {
     setEditing(null);
     setFTitle(""); setFCliente(""); setFPhone(""); setFPhoneError(""); setFClientEmail(""); setFEmailError(""); setFCategory("atendimento"); setFEventoTipo("");
+    setFEventCareType(""); setFEventProfessionals([]); setFEventAttendees([]); setFEventDescription(""); setFEventCapacity("");
     setFParticipants([]); setFGuestEmails(""); setFMeetingType(""); setFMeetingObjective(""); setFMeetingAgenda("");
     setFPrivateNotes(""); setFMeetingMinutes(""); setFActionItems([]); setFReminderMinutes([60, 30]);
     setFRecurrence(""); setFRecurrenceCount(4); setFUpdateSeries(false); setAvailabilitySuggestions([]); setGuestStatuses(null);
@@ -247,6 +259,9 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     setFTitle(a.title); setFCliente(a.patient_name ?? ""); setFPhone((a.patient_whatsapp ?? "").replace(/\D/g, "").slice(0, 13)); setFPhoneError("");
     setFClientEmail((a.client_email ?? a.patient_email ?? "").slice(0, 120)); setFEmailError("");
     setFCategory(a.category); setFEventoTipo(a.evento_tipo ?? ""); setFModality(a.modality); setFRoom(a.room_id ?? "sala_1");
+    setFEventCareType(a.event_care_type ?? ""); setFEventProfessionals(a.event_professionals ?? []);
+    setFEventAttendees((a.event_attendees ?? []).map((attendee) => ({ ...attendee, email: attendee.email ?? "", whatsapp: attendee.whatsapp ?? "" })));
+    setFEventDescription(a.event_description ?? ""); setFEventCapacity(a.event_capacity ? String(a.event_capacity) : "");
     setFStart(fmtTime(a.start_at)); setFEnd(fmtTime(a.end_at));
     const d = safeDateStr(new Date(a.start_at).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
     setFDate(d);
@@ -292,6 +307,10 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     setFActionItems((items) => [...items, { id: `${Date.now()}-${Math.random()}`, text: "", owner_email: null, due_date: null, done: false }]);
   }
 
+  function addEventAttendee() {
+    setFEventAttendees((attendees) => [...attendees, { id: `${Date.now()}-${Math.random()}`, name: "", email: "", whatsapp: "" }]);
+  }
+
   async function findAvailableTimes() {
     const [startHour, startMinute] = fStart.split(":").map(Number);
     const [endHour, endMinute] = fEnd.split(":").map(Number);
@@ -300,7 +319,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     setLoadingSuggestions(true);
     setFormError("");
     const params = new URLSearchParams({ date: safeDateStr(fDate), duration: String(duration), modality: fModality === "presencial" ? "presencial" : "online", room_id: fRoom });
-    [...new Set([...fParticipants, fProf])].forEach((email) => params.append("participant", email));
+    [...new Set([...fParticipants, ...fEventProfessionals, fProf])].forEach((email) => params.append("participant", email));
     const response = await fetch(`/api/meetings/availability?${params}`);
     const data = await response.json();
     setLoadingSuggestions(false);
@@ -321,6 +340,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
     setFormError("");
     if (!fTitle.trim()) { setFormError("Informe o título"); return; }
     if (fCategory === "evento" && !fEventoTipo) { setFormError("Escolha o tipo do evento (Curso, Treinamento, Formação, Workshop ou Atendimento em grupo)."); return; }
+    if (fCategory === "evento" && fEventoTipo === "atendimento_grupo" && !fEventCareType) { setFormError("Escolha o tipo de cuidado do atendimento em grupo."); return; }
     const dateStr = safeDateStr(fDate);
     const emailTrim = fClientEmail.trim();
     if (emailTrim && !isValidEmail(emailTrim)) { setFormError("Confira o e-mail: parece incompleto (ex: nome@email.com)."); setFEmailError("Confira o e-mail (ex: nome@email.com)."); return; }
@@ -333,14 +353,21 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
       ? [...new Set(fGuestEmails.split(/[\s,;]+/).map((email) => email.trim().toLowerCase()).filter(Boolean))]
       : [];
     if (guestEmails.some((email) => !isValidEmail(email))) { setFormError("Confira os e-mails dos convidados externos."); return; }
-    if (fRecurrence && !editing && (fRecurrenceCount < 2 || fRecurrenceCount > 12)) { setFormError("A série deve ter entre 2 e 12 ocorrências."); return; }
+    const isEvent = fCategory === "evento";
+    const eventAttendees = isEvent ? fEventAttendees.filter((attendee) => attendee.name.trim()) : [];
+    if (isEvent && eventAttendees.length !== fEventAttendees.length) { setFormError("Informe o nome de cada inscrito ou remova a linha vazia."); return; }
+    if (isEvent && eventAttendees.some((attendee) => attendee.email && !isValidEmail(attendee.email))) { setFormError("Confira os e-mails dos inscritos."); return; }
+    if (isEvent && eventAttendees.some((attendee) => attendee.whatsapp && !isValidPhone(attendee.whatsapp))) { setFormError("Confira o WhatsApp de cada inscrito."); return; }
+    if (isEvent && fEventCapacity && (Number(fEventCapacity) < eventAttendees.length || Number(fEventCapacity) < 1)) { setFormError("A capacidade deve ser maior ou igual ao número de inscritos cadastrados."); return; }
+    const maxOccurrences = isEvent ? 30 : 12;
+    if (fRecurrence && !editing && (fRecurrenceCount < 2 || fRecurrenceCount > maxOccurrences)) { setFormError(`A série deve ter entre 2 e ${maxOccurrences} ocorrências.`); return; }
     setSaving(true);
     const participants = fCategory === "reuniao" ? fParticipants : [];
     const payload = {
       title: fTitle.trim(),
-      patient_name: fCategory === "reuniao" ? null : (fCliente.trim() || null),
-      patient_whatsapp: fCategory === "reuniao" ? null : (fPhone.replace(/\D/g,"") || null),
-      client_email: fCategory === "reuniao" ? null : (fClientEmail.trim() || null),
+      patient_name: fCategory === "reuniao" || isEvent ? null : (fCliente.trim() || null),
+      patient_whatsapp: fCategory === "reuniao" || isEvent ? null : (fPhone.replace(/\D/g,"") || null),
+      client_email: fCategory === "reuniao" || isEvent ? null : (fClientEmail.trim() || null),
       room_id: fModality === "presencial" ? fRoom : null,
       modality: fModality,
       category: fCategory,
@@ -356,9 +383,18 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
       meeting_minutes: fCategory === "reuniao" ? fMeetingMinutes : null,
       action_items: fCategory === "reuniao" ? fActionItems : [],
       reminder_minutes: fCategory === "reuniao" ? fReminderMinutes : [60, 30],
-      recurrence_frequency: fRecurrence || null,
-      recurrence_count: fRecurrence ? fRecurrenceCount : null,
+      recurrence_frequency: (fCategory === "reuniao" || isEvent) ? fRecurrence || null : null,
+      recurrence_count: (fCategory === "reuniao" || isEvent) && fRecurrence ? fRecurrenceCount : null,
       update_series: fUpdateSeries,
+      event_care_type: isEvent ? fEventCareType : null,
+      event_professionals: isEvent ? fEventProfessionals : [],
+      event_attendees: eventAttendees.map((attendee) => ({
+        ...attendee,
+        email: attendee.email.trim() || null,
+        whatsapp: attendee.whatsapp.replace(/\D/g, "") || null,
+      })),
+      event_description: isEvent ? fEventDescription : null,
+      event_capacity: isEvent && fEventCapacity ? Number(fEventCapacity) : null,
     };
     const url = editing ? `/api/appointments/${editing.id}` : "/api/appointments";
     const method = editing ? "PATCH" : "POST";
@@ -441,13 +477,16 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
       appointment.patient_name ?? "",
       appointment.meeting_objective ?? "",
       appointment.meeting_agenda ?? "",
+      appointment.event_description ?? "",
       profName(owner, session, professionals),
       ...(appointment.participants ?? []),
       ...(appointment.guest_emails ?? []),
+      ...(appointment.event_professionals ?? []),
+      ...(appointment.event_attendees ?? []).flatMap((attendee) => [attendee.name, attendee.email ?? ""]),
     ].join(" ").toLowerCase();
     return (!query || searchable.includes(query)) &&
       (!categoryFilter || appointment.category === categoryFilter) &&
-      (!professionalFilter || owner === professionalFilter) &&
+      (!professionalFilter || owner === professionalFilter || (appointment.event_professionals ?? []).some((email) => email.toLowerCase() === professionalFilter)) &&
       (!filterRoom || appointment.room_id === filterRoom);
   });
 
@@ -572,8 +611,17 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                       <div key={a.id} className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[220px] shadow-sm" style={{borderLeft: `4px solid ${roomColor}`}}>
                         <div className="font-medium">{a.title}</div>
                         {eventoLabel(a.evento_tipo) && <div className="text-xs font-semibold text-amber-700">{eventoLabel(a.evento_tipo)}</div>}
+                        {a.category === "evento" && a.event_care_type && <div className="text-xs font-semibold text-amber-800">{EVENTO_CUIDADOS.find((care) => care.id === a.event_care_type)?.label ?? a.event_care_type}</div>}
                         <div className="text-xs text-gray-500">{time} · {room}</div>
                         {a.patient_name && <div className="text-xs text-gray-700">{a.patient_name}</div>}
+                        {a.category === "evento" && a.event_professionals?.length ? <div className="text-xs text-gray-700">Facilitadores: {a.event_professionals.map((email) => profName(email, session, professionals)).join(", ")}</div> : null}
+                        {a.category === "evento" && a.event_attendees && <div className="text-xs text-gray-600">{a.event_attendees.length} inscrito(s){a.event_capacity ? ` · limite ${a.event_capacity}` : ""}</div>}
+                        {a.category === "evento" && a.event_description && <div className="text-xs text-gray-600 whitespace-pre-line line-clamp-2">{a.event_description}</div>}
+                        {a.category === "evento" && a.event_attendees?.length ? (
+                          <details className="mt-1 text-xs"><summary className="cursor-pointer text-amber-800">Lista de inscritos</summary>
+                            {a.event_attendees.map((attendee) => <div key={attendee.id} className="mt-1">{attendee.name}</div>)}
+                          </details>
+                        ) : null}
                         {a.category === "reuniao" && a.meeting_objective && <div className="text-xs text-indigo-700">Objetivo: {a.meeting_objective}</div>}
                         {a.category === "reuniao" && a.meeting_agenda && <div className="text-xs text-gray-600 whitespace-pre-line line-clamp-2">{a.meeting_agenda}</div>}
                         {a.recurrence_count && a.recurrence_index && <div className="text-[11px] text-indigo-700">Série · ocorrência {a.recurrence_index}/{a.recurrence_count}</div>}
@@ -589,7 +637,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                         <div className="flex gap-2 mt-2">
                           {canManage(a) && <button onClick={()=>openEdit(a)} className="text-xs border px-2 py-1 rounded hover:bg-gray-50">Editar</button>}
                           {canManage(a) && <button onClick={()=>del(a.id)} className="text-xs border px-2 py-1 rounded text-red-600 hover:bg-red-50">Excluir</button>}
-                          {a.category === "reuniao" && a.google_event_id && (session.isAdmin || canManage(a) || (a.participants ?? []).some((email) => email.toLowerCase() === session.email.toLowerCase())) && (
+                          {(a.category === "reuniao" || a.category === "evento") && a.google_event_id && (session.isAdmin || canManage(a) || (a.participants ?? []).some((email) => email.toLowerCase() === session.email.toLowerCase()) || (a.event_professionals ?? []).some((email) => email.toLowerCase() === session.email.toLowerCase())) && (
                             <button onClick={() => loadGuestStatuses(a.id)} className="text-xs border px-2 py-1 rounded">{loadingGuestStatuses ? "Consultando…" : "Convites / RSVP"}</button>
                           )}
                           {a.patient_whatsapp && !Number.isNaN(new Date(a.start_at).getTime()) && (
@@ -675,6 +723,8 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                                 <div className="truncate font-medium">{fmtTime(a.start_at)} {a.title}</div>
                                 <div className="truncate text-gray-500">{mine ? profName(a.professional_email ?? a.therapist_email ?? "", session, professionals) : "Reservado"}</div>
                                 {a.category === "reuniao" && a.meeting_agenda && <div className="truncate text-indigo-700">Pauta: {a.meeting_agenda}</div>}
+                                {a.category === "evento" && a.event_care_type && <div className="truncate text-amber-700">{EVENTO_CUIDADOS.find((care) => care.id === a.event_care_type)?.label ?? a.event_care_type}</div>}
+                                {a.category === "evento" && a.event_capacity && <div className="text-gray-500">Limite: {a.event_capacity}</div>}
                                 {a.meeting_link && <a href={a.meeting_link} target="_blank" rel="noreferrer" className="block truncate text-blue-700 underline">Abrir Meet</a>}
                               </div>
                             );
@@ -831,17 +881,80 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="border-2 border-gray-300 rounded-xl p-4 bg-gray-50 space-y-3">
-                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{contactBlockTitle}</div>
-                {fCategory === "evento" && (
-                  <label className="block text-sm font-medium">Tipo do evento*
-                    <select value={fEventoTipo} onChange={e=>setFEventoTipo(e.target.value)} className="mt-1 w-full border-2 border-amber-300 bg-amber-50 rounded-lg px-3 py-2">
+            ) : fCategory === "evento" ? (
+              <div className="border-2 border-amber-200 rounded-xl p-4 bg-amber-50/50 space-y-3">
+                <div className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Dados do evento / curso</div>
+                <label className="block text-sm font-medium">Tipo do evento*
+                  <select value={fEventoTipo} onChange={(e) => { setFEventoTipo(e.target.value); if (e.target.value !== "atendimento_grupo") setFEventCareType(""); }} className="mt-1 w-full border-2 border-amber-300 bg-white rounded-lg px-3 py-2">
+                    <option value="">Selecione…</option>
+                    {EVENTO_TIPOS.map((eventType) => <option key={eventType.id} value={eventType.id}>{eventType.label}</option>)}
+                  </select>
+                </label>
+                {fEventoTipo === "atendimento_grupo" && (
+                  <label className="block text-sm font-medium">Tipo de cuidado*
+                    <select value={fEventCareType} onChange={(e) => setFEventCareType(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white">
                       <option value="">Selecione…</option>
-                      {EVENTO_TIPOS.map(t=> <option key={t.id} value={t.id}>{t.label}</option>)}
+                      {EVENTO_CUIDADOS.map((care) => <option key={care.id} value={care.id}>{care.label}</option>)}
                     </select>
                   </label>
                 )}
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Profissionais facilitadores</legend>
+                  <p className="text-xs text-gray-600">Selecione uma ou várias pessoas da equipe.</p>
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {professionals.map((person) => (
+                      <label key={person.email} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
+                        <input type="checkbox" checked={fEventProfessionals.includes(person.email)} onChange={(e) => setFEventProfessionals((current) => e.target.checked ? [...new Set([...current, person.email])] : current.filter((email) => email !== person.email))} />
+                        <span>{person.name ?? person.email}</span><span className="ml-auto text-xs text-gray-500">{person.role}</span>
+                      </label>
+                    ))}
+                    {professionals.length === 0 && <p className="text-xs text-gray-500">Cadastre profissionais no painel administrativo.</p>}
+                  </div>
+                </fieldset>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div><div className="text-sm font-medium">Inscritos / participantes</div><div className="text-xs text-gray-600">Nome obrigatório; e-mail recebe o convite e WhatsApp fica interno.</div></div>
+                    <button type="button" onClick={addEventAttendee} className="shrink-0 rounded-lg border bg-white px-3 py-2 text-xs">+ Inscrito</button>
+                  </div>
+                  {fEventAttendees.map((attendee, index) => (
+                    <div key={attendee.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_0.8fr_auto] gap-2 rounded-lg border bg-white p-2">
+                      <input value={attendee.name} onChange={(e) => setFEventAttendees((current) => current.map((item, i) => i === index ? { ...item, name: e.target.value } : item))} maxLength={120} aria-label={`Nome do inscrito ${index + 1}`} placeholder="Nome completo" className="min-w-0 border rounded px-2 py-2 text-sm" />
+                      <input type="email" value={attendee.email} onChange={(e) => setFEventAttendees((current) => current.map((item, i) => i === index ? { ...item, email: e.target.value } : item))} maxLength={120} aria-label={`E-mail do inscrito ${index + 1}`} placeholder="E-mail (opcional)" className="min-w-0 border rounded px-2 py-2 text-sm" />
+                      <input inputMode="tel" value={attendee.whatsapp} onChange={(e) => setFEventAttendees((current) => current.map((item, i) => i === index ? { ...item, whatsapp: e.target.value.replace(/\D/g, "").slice(0, 13) } : item))} maxLength={13} aria-label={`WhatsApp do inscrito ${index + 1}`} placeholder="WhatsApp" className="min-w-0 border rounded px-2 py-2 text-sm" />
+                      <button type="button" onClick={() => setFEventAttendees((current) => current.filter((_, i) => i !== index))} aria-label={`Remover inscrito ${index + 1}`} className="px-2 text-xs text-red-600">Remover</button>
+                    </div>
+                  ))}
+                  <div className="text-xs text-gray-600">{fEventAttendees.length} inscrito(s) cadastrado(s)</div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block text-sm">Limite de participantes (opcional)
+                    <input type="number" min={1} value={fEventCapacity} onChange={(e) => setFEventCapacity(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Ex.: 25" />
+                  </label>
+                  {!editing && (
+                    <label className="block text-sm">Duração do evento
+                      <select value={fRecurrence} onChange={(e) => setFRecurrence(e.target.value as "" | "daily" | "weekly" | "monthly")} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white">
+                        <option value="">Um dia</option><option value="daily">Dias consecutivos</option><option value="weekly">Mesmo dia, semanal</option><option value="monthly">Mesmo dia, mensal</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+                {!editing && fRecurrence && <label className="block text-sm">Quantidade de dias / encontros (2 a 30)
+                  <input type="number" min={2} max={30} value={fRecurrenceCount} onChange={(e) => setFRecurrenceCount(Number(e.target.value))} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white" />
+                </label>}
+                {editing?.series_id && (
+                  <label className="inline-flex items-center gap-2 text-xs text-amber-900">
+                    <input type="checkbox" checked={fUpdateSeries} onChange={(e) => setFUpdateSeries(e.target.checked)} />
+                    Aplicar alterações a todos os dias do curso / evento
+                  </label>
+                )}
+                <label className="block text-sm">Descrição do evento (compartilhada com convidados)
+                  <textarea value={fEventDescription} onChange={(e) => setFEventDescription(e.target.value)} maxLength={3000} rows={3} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white" placeholder="Descreva objetivo, programação ou orientações do evento." />
+                  <span className="text-[11px] text-gray-500">Não inclua dados clínicos ou contatos pessoais aqui. E-mails e WhatsApps dos inscritos não aparecem no convite.</span>
+                </label>
+              </div>
+            ) : (
+              <div className="border-2 border-gray-300 rounded-xl p-4 bg-gray-50 space-y-3">
+                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{contactBlockTitle}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block text-sm">{contactLabel}<input value={fCliente} onChange={e=>setFCliente(e.target.value)} maxLength={120} className="mt-1 w-full border rounded-lg px-3 py-2" placeholder={isExternal ? "Nome do responsável" : "Nome (opcional p/ reuniões)"} /></label>
                   <label className="block text-sm">WhatsApp

@@ -46,6 +46,18 @@ export const EVENTO_TIPOS = [
   { id: "atendimento_grupo", label: "Atendimento em grupo" },
 ] as const;
 
+export const EVENTO_CUIDADOS = [
+  { id: "dia_do_cuidado", label: "Dia do Cuidado" },
+  { id: "grupo_terapeutico", label: "Atendimento terapêutico em grupo" },
+  { id: "outro", label: "Outro cuidado em grupo" },
+] as const;
+
+export type EventoCuidado = (typeof EVENTO_CUIDADOS)[number]["id"];
+
+export function isEventoCuidado(value: unknown): value is EventoCuidado {
+  return EVENTO_CUIDADOS.some((care) => care.id === value);
+}
+
 export type EventoTipo = (typeof EVENTO_TIPOS)[number]["id"];
 
 export function isEventoTipo(v: unknown): v is EventoTipo {

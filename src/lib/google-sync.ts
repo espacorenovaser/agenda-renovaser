@@ -51,6 +51,9 @@ function eventBody(opts: GoogleEventInput) {
     start: { dateTime: opts.start_at, timeZone: "America/Sao_Paulo" },
     end: { dateTime: opts.end_at, timeZone: "America/Sao_Paulo" },
     attendees: opts.attendees.map((email) => ({ email })),
+    guestsCanSeeOtherGuests: false,
+    guestsCanInviteOthers: false,
+    guestsCanModify: false,
     reminders: { useDefault: false, overrides: reminderOverrides(opts.reminderMinutes) },
     ...(opts.onlineMeeting ? {
       conferenceData: {

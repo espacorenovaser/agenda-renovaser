@@ -10,6 +10,7 @@ type AppointmentConflict = {
   modality: string;
   professional_email: string | null;
   participants: string[] | null;
+  event_professionals: string[] | null;
 };
 
 export async function GET(req: NextRequest) {
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("appointments")
-    .select("start_at,end_at,room_id,modality,professional_email,participants")
+    .select("start_at,end_at,room_id,modality,professional_email,participants,event_professionals")
     .lt("start_at", dayEnd.toISOString())
     .gt("end_at", dayStart.toISOString());
   if (error) return NextResponse.json({ error: "Não foi possível consultar a disponibilidade." }, { status: 500 });
@@ -49,7 +50,9 @@ export async function GET(req: NextRequest) {
       const overlap = new Date(appointment.start_at) < end && new Date(appointment.end_at) > start;
       if (!overlap) return false;
       const owner = String(appointment.professional_email ?? "").toLowerCase();
-      const attendeeConflict = participants.has(owner) || (appointment.participants ?? []).some((email: string) => participants.has(String(email).toLowerCase()));
+      const attendeeConflict = participants.has(owner) ||
+        (appointment.participants ?? []).some((email: string) => participants.has(String(email).toLowerCase())) ||
+        (appointment.event_professionals ?? []).some((email: string) => participants.has(String(email).toLowerCase()));
       const roomConflict = modality === "presencial" && appointment.modality === "presencial" &&
         (roomId === "auditorio" || appointment.room_id === "auditorio" || appointment.room_id === roomId);
       return attendeeConflict || roomConflict;

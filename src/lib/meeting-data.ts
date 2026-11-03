@@ -8,6 +8,13 @@ export type MeetingActionItem = {
   done: boolean;
 };
 
+export type EventAttendee = {
+  id: string;
+  name: string;
+  email: string | null;
+  whatsapp: string | null;
+};
+
 function validEmail(value: string): boolean {
   return value.length <= 120 && /^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(value);
 }
@@ -52,17 +59,38 @@ export function normalizeReminderMinutes(value: unknown): number[] | null {
   return [...new Set(values)];
 }
 
+export function normalizeEventAttendees(value: unknown): EventAttendee[] | null {
+  if (!Array.isArray(value) || value.length > 200) return null;
+  const attendees: EventAttendee[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw.name !== "string" || raw.name.trim().length === 0 || raw.name.trim().length > 120) return null;
+    const email = typeof raw.email === "string" && raw.email.trim() ? raw.email.trim().toLowerCase() : null;
+    const digits = typeof raw.whatsapp === "string" ? raw.whatsapp.replace(/\D/g, "") : "";
+    if (email && !validEmail(email)) return null;
+    if (digits && (digits.length < 10 || digits.length > 13 || /^(\d)\1+$/.test(digits))) return null;
+    attendees.push({
+      id: typeof raw.id === "string" && raw.id.length <= 80 ? raw.id : randomUUID(),
+      name: raw.name.trim(),
+      email,
+      whatsapp: digits || null,
+    });
+  }
+  return attendees;
+}
+
 export function recurringTimes(
   startAt: string,
   endAt: string,
-  frequency: "weekly" | "monthly",
+  frequency: "daily" | "weekly" | "monthly",
   count: number,
 ): Array<{ start_at: string; end_at: string }> {
   const start = new Date(startAt);
   const duration = new Date(endAt).getTime() - start.getTime();
   return Array.from({ length: count }, (_, index) => {
     const occurrence = new Date(start);
-    if (frequency === "weekly") {
+    if (frequency === "daily") {
+      occurrence.setUTCDate(occurrence.getUTCDate() + index);
+    } else if (frequency === "weekly") {
       occurrence.setUTCDate(occurrence.getUTCDate() + index * 7);
     } else if (index > 0) {
       const day = occurrence.getUTCDate();

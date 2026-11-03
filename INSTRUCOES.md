@@ -27,6 +27,8 @@ se o valor anterior ainda estiver no histórico git (arquivo está gitignored, e
 
 Depois do schema e das migrações anteriores, execute `supabase/migrate_meeting_features.sql` no SQL Editor do mesmo projeto. Essa migração cria os campos de pauta, convidados, atas, lembretes, encaminhamentos e recorrência, além da função para atualizar séries. A nova experiência de reuniões precisa dessa migração antes do deploy do código.
 
+Para o cadastro de cursos, formações, workshops e atendimentos em grupo, execute também `supabase/migrate_event_features.sql` depois da migração de reuniões. Ela habilita facilitadores múltiplos, inscritos, tipo de cuidado, capacidade e séries de eventos de até 30 encontros.
+
 ## O que já foi feito nesta entrega
 
 - [x] `supabase/schema.sql` — tabelas rooms/appointments/users + funções RPC `create_appointment` / `update_appointment` com trava atômica (online não bloqueia, auditório bloqueia salas e vice-versa)

@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getSession } from "@/lib/auth";
 import { syncToGoogleCalendar } from "@/lib/google-sync";
-import { isEventoTipo } from "@/lib/rooms";
-import { normalizeActionItems, normalizeMeetingEmails, normalizeReminderMinutes, recurringTimes } from "@/lib/meeting-data";
+import { isEventoCuidado, isEventoTipo } from "@/lib/rooms";
+import { normalizeActionItems, normalizeEventAttendees, normalizeMeetingEmails, normalizeReminderMinutes, recurringTimes } from "@/lib/meeting-data";
 import { randomUUID } from "node:crypto";
 
 type AppointmentVisibilityRow = {
   professional_email?: string | null;
   therapist_email?: string | null;
   participants?: string[] | null;
+  event_professionals?: string[] | null;
   category: string;
   title: string;
   [key: string]: unknown;
@@ -20,6 +21,7 @@ type AppointmentConflictRow = {
   end_at: string;
   professional_email?: string | null;
   participants?: string[] | null;
+  event_professionals?: string[] | null;
 };
 
 type CreatedAppointment = {
@@ -79,6 +81,8 @@ export async function GET(req: NextRequest) {
       if (a.category === "reuniao" && meetingParticipant) {
         return { ...a, private_notes: null };
       }
+      const eventFacilitator = (a.event_professionals ?? []).some((email: string) => String(email).trim().toLowerCase() === me);
+      if (a.category === "evento" && eventFacilitator) return a;
       return {
         ...a,
         title: isShared ? a.title : "Reservado",
@@ -96,6 +100,11 @@ export async function GET(req: NextRequest) {
         action_items: [],
         meeting_link: null,
         google_event_id: null,
+        event_professionals: [],
+        event_attendees: [],
+        event_description: null,
+        event_care_type: null,
+        event_capacity: null,
       };
     });
     return NextResponse.json(redacted);
@@ -141,21 +150,38 @@ export async function POST(req: NextRequest) {
   }
   const eventoTipo = category === "evento" ? eventoTipoRaw : null;
   const isMeeting = category === "reuniao";
+  const isEvent = category === "evento";
   const participants = isMeeting ? normalizeMeetingEmails(body.participants ?? []) : [];
   const guestEmails = isMeeting ? normalizeMeetingEmails(body.guest_emails ?? []) : [];
   const actionItems = isMeeting ? normalizeActionItems(body.action_items ?? []) : [];
   const reminderMinutes = isMeeting ? normalizeReminderMinutes(body.reminder_minutes) : [60, 30];
-  if (participants === null || guestEmails === null || actionItems === null || reminderMinutes === null) {
+  const eventProfessionals = isEvent ? normalizeMeetingEmails(body.event_professionals ?? []) : [];
+  const eventAttendees = isEvent ? normalizeEventAttendees(body.event_attendees ?? []) : [];
+  const eventCapacity = isEvent && body.event_capacity !== null && body.event_capacity !== undefined ? Number(body.event_capacity) : null;
+  const eventCareType = isEvent && eventoTipo === "atendimento_grupo" && body.event_care_type ? String(body.event_care_type) : null;
+  if (
+    participants === null || guestEmails === null || actionItems === null || reminderMinutes === null ||
+    eventProfessionals === null || eventAttendees === null ||
+    (eventCapacity !== null && (!Number.isInteger(eventCapacity) || eventCapacity < eventAttendees.length || eventCapacity > 10000))
+  ) {
     return NextResponse.json({ error: "Confira participantes, convidados, lembretes e encaminhamentos." }, { status: 400 });
   }
-  const frequency = isMeeting && ["weekly", "monthly"].includes(body.recurrence_frequency)
-    ? body.recurrence_frequency as "weekly" | "monthly"
+  if (isEvent && eventoTipo === "atendimento_grupo" && (!eventCareType || !isEventoCuidado(eventCareType))) {
+    return NextResponse.json({ error: "Escolha o tipo de cuidado para o atendimento em grupo." }, { status: 400 });
+  }
+  if (eventCareType && !isEventoCuidado(eventCareType)) {
+    return NextResponse.json({ error: "Tipo de cuidado inválido." }, { status: 400 });
+  }
+  const recurrenceAllowed = isMeeting || isEvent;
+  const frequency = recurrenceAllowed && ["daily", "weekly", "monthly"].includes(body.recurrence_frequency)
+    ? body.recurrence_frequency as "daily" | "weekly" | "monthly"
     : null;
   const occurrenceCount = frequency ? Number(body.recurrence_count) : 1;
-  if (!Number.isInteger(occurrenceCount) || occurrenceCount < 1 || occurrenceCount > 12 || (frequency && occurrenceCount < 2)) {
-    return NextResponse.json({ error: "Escolha entre 2 e 12 ocorrências para a recorrência." }, { status: 400 });
+  const maximumOccurrences = isEvent ? 30 : 12;
+  if (!Number.isInteger(occurrenceCount) || occurrenceCount < 1 || occurrenceCount > maximumOccurrences || (frequency && occurrenceCount < 2)) {
+    return NextResponse.json({ error: `Escolha entre 2 e ${maximumOccurrences} ocorrências para a recorrência.` }, { status: 400 });
   }
-  const textLimits = { meeting_type: 60, meeting_objective: 1000, meeting_agenda: 5000, private_notes: 5000, meeting_minutes: 10000 };
+  const textLimits = { meeting_type: 60, meeting_objective: 1000, meeting_agenda: 5000, private_notes: 5000, meeting_minutes: 10000, event_description: 3000 };
   for (const [field, limit] of Object.entries(textLimits)) {
     if (typeof body[field] === "string" && body[field].length > limit) {
       return NextResponse.json({ error: "Um dos campos da reunião excede o limite permitido." }, { status: 400 });
@@ -163,19 +189,19 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
-  if (isMeeting) {
+  if (isMeeting || isEvent) {
     const { error: schemaError } = await supabase.from("appointments")
-      .select("participants,guest_emails,meeting_type,meeting_objective,meeting_agenda,private_notes,meeting_minutes,action_items,reminder_minutes,series_id,recurrence_frequency,recurrence_index,recurrence_count")
+      .select("participants,guest_emails,meeting_type,meeting_objective,meeting_agenda,private_notes,meeting_minutes,action_items,reminder_minutes,series_id,recurrence_frequency,recurrence_index,recurrence_count,event_professionals,event_attendees,event_description,event_care_type,event_capacity")
       .limit(1);
     if (schemaError) {
-      return NextResponse.json({ error: "A migração de reuniões do Supabase precisa ser aplicada antes de criar reuniões." }, { status: 503 });
+      return NextResponse.json({ error: "A migração de reuniões e eventos do Supabase precisa ser aplicada antes de criar este agendamento." }, { status: 503 });
     }
   }
   const base = {
     p_title: body.title,
-    p_patient_name: body.patient_name ?? null,
-    p_patient_whatsapp: body.patient_whatsapp ?? null,
-    p_patient_email: body.client_email ?? body.patient_email ?? null,
+    p_patient_name: isMeeting || isEvent ? null : body.patient_name ?? null,
+    p_patient_whatsapp: isMeeting || isEvent ? null : body.patient_whatsapp ?? null,
+    p_patient_email: isMeeting || isEvent ? null : body.client_email ?? body.patient_email ?? null,
     p_room_id: roomId,
     p_modality: modality,
     p_category: category,
@@ -188,13 +214,13 @@ export async function POST(req: NextRequest) {
     ? recurringTimes(String(body.start_at), String(body.end_at), frequency, occurrenceCount)
     : [{ start_at: String(body.start_at), end_at: String(body.end_at) }];
   const seriesId = frequency ? randomUUID() : null;
-  if (isMeeting) {
-    const participantsToCheck = new Set([profEmail, ...participants].map((email) => email.toLowerCase()));
+  if (isMeeting || isEvent) {
+    const participantsToCheck = new Set([profEmail, ...participants, ...eventProfessionals].map((email) => email.toLowerCase()));
     const from = times[0].start_at;
     const to = times[times.length - 1].end_at;
     const { data: existingAppointments, error: conflictQueryError } = await supabase
       .from("appointments")
-      .select("start_at,end_at,professional_email,participants")
+      .select("start_at,end_at,professional_email,participants,event_professionals")
       .lt("start_at", to)
       .gt("end_at", from);
     if (conflictQueryError) return NextResponse.json({ error: "Não foi possível verificar a disponibilidade dos participantes." }, { status: 500 });
@@ -202,7 +228,8 @@ export async function POST(req: NextRequest) {
       const overlaps = new Date(appointment.start_at) < new Date(time.end_at) && new Date(appointment.end_at) > new Date(time.start_at);
       const ownerIsBusy = participantsToCheck.has(String(appointment.professional_email ?? "").toLowerCase());
       const participantIsBusy = (appointment.participants ?? []).some((email: string) => participantsToCheck.has(String(email).toLowerCase()));
-      return overlaps && (ownerIsBusy || participantIsBusy);
+      const eventProfessionalIsBusy = (appointment.event_professionals ?? []).some((email: string) => participantsToCheck.has(String(email).toLowerCase()));
+      return overlaps && (ownerIsBusy || participantIsBusy || eventProfessionalIsBusy);
     }));
     if (conflict) return NextResponse.json({ error: "Um dos participantes selecionados já tem outro compromisso nesse horário." }, { status: 409 });
   }
@@ -235,6 +262,11 @@ export async function POST(req: NextRequest) {
     meeting_minutes: isMeeting ? String(body.meeting_minutes ?? "").trim() || null : null,
     action_items: isMeeting ? actionItems : [],
     reminder_minutes: isMeeting ? reminderMinutes : [60, 30],
+    event_professionals: isEvent ? eventProfessionals : [],
+    event_attendees: isEvent ? eventAttendees : [],
+    event_description: isEvent ? String(body.event_description ?? "").trim() || null : null,
+    event_care_type: isEvent ? eventCareType : null,
+    event_capacity: isEvent ? eventCapacity : null,
     series_id: seriesId,
     recurrence_frequency: frequency,
     recurrence_index: frequency ? 1 : null,
@@ -243,11 +275,11 @@ export async function POST(req: NextRequest) {
   let calendarWarning: string | null = null;
   for (let index = 0; index < created.length; index++) {
     const occurrenceMetadata = { ...metadata, ...(frequency ? { recurrence_index: index + 1 } : {}) };
-    const rowMetadata = isMeeting ? occurrenceMetadata : { evento_tipo: eventoTipo };
+    const rowMetadata = isMeeting || isEvent ? occurrenceMetadata : { evento_tipo: eventoTipo };
     const { error } = await supabase.from("appointments").update(rowMetadata).eq("id", created[index].id);
     if (error) {
       await supabase.from("appointments").delete().in("id", created.map((row) => row.id));
-      return NextResponse.json({ error: "Não foi possível salvar os detalhes da reunião. Confirme se a migração de reuniões foi aplicada." }, { status: 500 });
+      return NextResponse.json({ error: "Não foi possível salvar os detalhes. Confirme se a migração de reuniões/eventos foi aplicada." }, { status: 500 });
     }
     created[index] = { ...created[index], ...rowMetadata };
   }
@@ -255,14 +287,17 @@ export async function POST(req: NextRequest) {
   for (let index = 0; index < created.length; index++) {
     const row = created[index];
     const clientEmail: string | null = body.client_email ?? body.patient_email ?? null;
-    const attendees = [...new Set([clientEmail, ...guestEmails, ...participants, profEmail].filter(Boolean) as string[])];
-    if (!isMeeting && !clientEmail && !guestEmails.length && !participants.length) continue;
+    const eventEmails = eventAttendees.map((attendee) => attendee.email).filter((email): email is string => Boolean(email));
+    const eventStaffEmails = eventProfessionals;
+    const attendees = [...new Set([clientEmail, ...guestEmails, ...participants, ...eventEmails, ...eventStaffEmails, profEmail].filter(Boolean) as string[])];
+    if (!isMeeting && !isEvent && !clientEmail) continue;
     try {
       const roomLabel = modality === "presencial" ? body.room_id : modality === "externo" ? "Local do cliente" : "Online";
       const description = [
+        isEvent && body.event_description ? String(body.event_description) : "",
         isMeeting && body.meeting_objective ? `Objetivo: ${body.meeting_objective}` : "",
         isMeeting && body.meeting_agenda ? `Pauta:\n${body.meeting_agenda}` : "",
-        body.patient_name ? `Cliente: ${body.patient_name}` : "",
+        !isMeeting && !isEvent && body.patient_name ? `Cliente: ${body.patient_name}` : "",
         `Local: ${roomLabel} — Instituto RenovaSer`,
       ].filter(Boolean).join("\n\n");
       const event = await syncToGoogleCalendar({
@@ -271,7 +306,7 @@ export async function POST(req: NextRequest) {
         start_at: row.start_at ?? times[index].start_at,
         end_at: row.end_at ?? times[index].end_at,
         attendees,
-        reminderMinutes,
+        reminderMinutes: isMeeting ? reminderMinutes : [60, 30],
         onlineMeeting: modality === "online",
       });
       if (event?.id) {
