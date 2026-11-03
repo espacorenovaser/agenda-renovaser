@@ -3,6 +3,31 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { getSession } from "@/lib/auth";
 import { syncToGoogleCalendar } from "@/lib/google-sync";
 import { isEventoTipo } from "@/lib/rooms";
+import { normalizeActionItems, normalizeMeetingEmails, normalizeReminderMinutes, recurringTimes } from "@/lib/meeting-data";
+import { randomUUID } from "node:crypto";
+
+type AppointmentVisibilityRow = {
+  professional_email?: string | null;
+  therapist_email?: string | null;
+  participants?: string[] | null;
+  category: string;
+  title: string;
+  [key: string]: unknown;
+};
+
+type AppointmentConflictRow = {
+  start_at: string;
+  end_at: string;
+  professional_email?: string | null;
+  participants?: string[] | null;
+};
+
+type CreatedAppointment = {
+  id: string;
+  start_at?: string;
+  end_at?: string;
+  [key: string]: unknown;
+};
 
 function isValidEmail(v: string): boolean {
   const s = (v ?? "").trim();
@@ -46,10 +71,14 @@ export async function GET(req: NextRequest) {
   // completos e os dos outros só como bloco "Reservado" (sem dados do cliente — LGPD).
   if (!session.isAdmin && rows) {
     const me = session.email.trim().toLowerCase();
-    const redacted = (rows as any[]).map((a) => {
+    const redacted = (rows as AppointmentVisibilityRow[]).map((a) => {
       const owner = String(a.professional_email ?? a.therapist_email ?? "").trim().toLowerCase();
+      const meetingParticipant = (a.participants ?? []).some((email: string) => String(email).trim().toLowerCase() === me);
       if (owner === me) return a;
       const isShared = a.category === "reuniao" || a.category === "evento";
+      if (a.category === "reuniao" && meetingParticipant) {
+        return { ...a, private_notes: null };
+      }
       return {
         ...a,
         title: isShared ? a.title : "Reservado",
@@ -57,6 +86,16 @@ export async function GET(req: NextRequest) {
         patient_whatsapp: null,
         client_email: null,
         patient_email: null,
+        participants: [],
+        guest_emails: [],
+        meeting_type: null,
+        meeting_objective: null,
+        meeting_agenda: null,
+        private_notes: null,
+        meeting_minutes: null,
+        action_items: [],
+        meeting_link: null,
+        google_event_id: null,
       };
     });
     return NextResponse.json(redacted);
@@ -101,8 +140,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Escolha o tipo do evento (Curso, Treinamento, Formação, Workshop ou Atendimento em grupo)." }, { status: 400 });
   }
   const eventoTipo = category === "evento" ? eventoTipoRaw : null;
+  const isMeeting = category === "reuniao";
+  const participants = isMeeting ? normalizeMeetingEmails(body.participants ?? []) : [];
+  const guestEmails = isMeeting ? normalizeMeetingEmails(body.guest_emails ?? []) : [];
+  const actionItems = isMeeting ? normalizeActionItems(body.action_items ?? []) : [];
+  const reminderMinutes = isMeeting ? normalizeReminderMinutes(body.reminder_minutes) : [60, 30];
+  if (participants === null || guestEmails === null || actionItems === null || reminderMinutes === null) {
+    return NextResponse.json({ error: "Confira participantes, convidados, lembretes e encaminhamentos." }, { status: 400 });
+  }
+  const frequency = isMeeting && ["weekly", "monthly"].includes(body.recurrence_frequency)
+    ? body.recurrence_frequency as "weekly" | "monthly"
+    : null;
+  const occurrenceCount = frequency ? Number(body.recurrence_count) : 1;
+  if (!Number.isInteger(occurrenceCount) || occurrenceCount < 1 || occurrenceCount > 12 || (frequency && occurrenceCount < 2)) {
+    return NextResponse.json({ error: "Escolha entre 2 e 12 ocorrências para a recorrência." }, { status: 400 });
+  }
+  const textLimits = { meeting_type: 60, meeting_objective: 1000, meeting_agenda: 5000, private_notes: 5000, meeting_minutes: 10000 };
+  for (const [field, limit] of Object.entries(textLimits)) {
+    if (typeof body[field] === "string" && body[field].length > limit) {
+      return NextResponse.json({ error: "Um dos campos da reunião excede o limite permitido." }, { status: 400 });
+    }
+  }
 
   const supabase = getSupabaseAdmin();
+  if (isMeeting) {
+    const { error: schemaError } = await supabase.from("appointments")
+      .select("participants,guest_emails,meeting_type,meeting_objective,meeting_agenda,private_notes,meeting_minutes,action_items,reminder_minutes,series_id,recurrence_frequency,recurrence_index,recurrence_count")
+      .limit(1);
+    if (schemaError) {
+      return NextResponse.json({ error: "A migração de reuniões do Supabase precisa ser aplicada antes de criar reuniões." }, { status: 503 });
+    }
+  }
   const base = {
     p_title: body.title,
     p_patient_name: body.patient_name ?? null,
@@ -116,49 +184,107 @@ export async function POST(req: NextRequest) {
     p_created_by: session.email,
   };
 
-  // Tenta o modelo novo (professional_email); se o banco ainda estiver no antigo, tenta therapist_email
-  let { data, error } = await supabase.rpc("create_appointment", { ...base, p_professional_email: profEmail });
-  if (error && /p_professional_email|p_therapist_email|could not find|does not exist/i.test(error.message ?? "")) {
-    const retry = await supabase.rpc("create_appointment", { ...base, p_therapist_email: profEmail });
-    data = retry.data;
-    error = retry.error;
+  const times = frequency
+    ? recurringTimes(String(body.start_at), String(body.end_at), frequency, occurrenceCount)
+    : [{ start_at: String(body.start_at), end_at: String(body.end_at) }];
+  const seriesId = frequency ? randomUUID() : null;
+  if (isMeeting) {
+    const participantsToCheck = new Set([profEmail, ...participants].map((email) => email.toLowerCase()));
+    const from = times[0].start_at;
+    const to = times[times.length - 1].end_at;
+    const { data: existingAppointments, error: conflictQueryError } = await supabase
+      .from("appointments")
+      .select("start_at,end_at,professional_email,participants")
+      .lt("start_at", to)
+      .gt("end_at", from);
+    if (conflictQueryError) return NextResponse.json({ error: "Não foi possível verificar a disponibilidade dos participantes." }, { status: 500 });
+    const conflict = times.find((time) => ((existingAppointments ?? []) as AppointmentConflictRow[]).some((appointment) => {
+      const overlaps = new Date(appointment.start_at) < new Date(time.end_at) && new Date(appointment.end_at) > new Date(time.start_at);
+      const ownerIsBusy = participantsToCheck.has(String(appointment.professional_email ?? "").toLowerCase());
+      const participantIsBusy = (appointment.participants ?? []).some((email: string) => participantsToCheck.has(String(email).toLowerCase()));
+      return overlaps && (ownerIsBusy || participantIsBusy);
+    }));
+    if (conflict) return NextResponse.json({ error: "Um dos participantes selecionados já tem outro compromisso nesse horário." }, { status: 409 });
+  }
+  const created: CreatedAppointment[] = [];
+  for (let index = 0; index < times.length; index++) {
+    const rpcBase = { ...base, p_start_at: times[index].start_at, p_end_at: times[index].end_at };
+    let { data, error } = await supabase.rpc("create_appointment", { ...rpcBase, p_professional_email: profEmail });
+    if (error && /p_professional_email|p_therapist_email|could not find|does not exist/i.test(error.message ?? "")) {
+      const retry = await supabase.rpc("create_appointment", { ...rpcBase, p_therapist_email: profEmail });
+      data = retry.data;
+      error = retry.error;
+    }
+    if (error) {
+      if (created.length) await supabase.from("appointments").delete().in("id", created.map((row) => row.id));
+      const msg = error.message ?? "Erro ao criar agendamento";
+      return NextResponse.json({ error: msg }, { status: msg.includes("Conflito") ? 409 : 400 });
+    }
+    const row = (Array.isArray(data) ? data[0] : data) as CreatedAppointment | null;
+    if (row?.id) created.push(row);
   }
 
-  if (error) {
-    const msg = error.message ?? "Erro ao criar agendamento";
-    const status = msg.includes("Conflito") ? 409 : 400;
-    return NextResponse.json({ error: msg }, { status });
+  const metadata = {
+    evento_tipo: eventoTipo,
+    participants,
+    guest_emails: guestEmails,
+    meeting_type: isMeeting ? String(body.meeting_type ?? "").trim() || null : null,
+    meeting_objective: isMeeting ? String(body.meeting_objective ?? "").trim() || null : null,
+    meeting_agenda: isMeeting ? String(body.meeting_agenda ?? "").trim() || null : null,
+    private_notes: isMeeting ? String(body.private_notes ?? "").trim() || null : null,
+    meeting_minutes: isMeeting ? String(body.meeting_minutes ?? "").trim() || null : null,
+    action_items: isMeeting ? actionItems : [],
+    reminder_minutes: isMeeting ? reminderMinutes : [60, 30],
+    series_id: seriesId,
+    recurrence_frequency: frequency,
+    recurrence_index: frequency ? 1 : null,
+    recurrence_count: frequency ? occurrenceCount : null,
+  };
+  let calendarWarning: string | null = null;
+  for (let index = 0; index < created.length; index++) {
+    const occurrenceMetadata = { ...metadata, ...(frequency ? { recurrence_index: index + 1 } : {}) };
+    const rowMetadata = isMeeting ? occurrenceMetadata : { evento_tipo: eventoTipo };
+    const { error } = await supabase.from("appointments").update(rowMetadata).eq("id", created[index].id);
+    if (error) {
+      await supabase.from("appointments").delete().in("id", created.map((row) => row.id));
+      return NextResponse.json({ error: "Não foi possível salvar os detalhes da reunião. Confirme se a migração de reuniões foi aplicada." }, { status: 500 });
+    }
+    created[index] = { ...created[index], ...rowMetadata };
   }
 
-  // evento_tipo fora da RPC: as funções do banco não conhecem a coluna
-  if (data?.id) {
-    const { error: tipoError } = await supabase.from("appointments").update({ evento_tipo: eventoTipo }).eq("id", data.id);
-    if (tipoError) console.error("Falha ao gravar evento_tipo:", tipoError.message);
-  }
-
-  // se tem e-mail do cliente ou é reunião, sincroniza com Google (60 + 30 min popup)
-  // fire-and-forget: não falha o agendamento se o Google falhar
-  const clientEmail: string | null = body.client_email ?? body.patient_email ?? null;
-  const participants: string[] = Array.isArray(body.participants) ? body.participants : [];
-  if (clientEmail || participants.length > 0) {
+  for (let index = 0; index < created.length; index++) {
+    const row = created[index];
+    const clientEmail: string | null = body.client_email ?? body.patient_email ?? null;
+    const attendees = [...new Set([clientEmail, ...guestEmails, ...participants, profEmail].filter(Boolean) as string[])];
+    if (!isMeeting && !clientEmail && !guestEmails.length && !participants.length) continue;
     try {
-      const attendees = [clientEmail, ...participants, profEmail].filter(Boolean) as string[];
       const roomLabel = modality === "presencial" ? body.room_id : modality === "externo" ? "Local do cliente" : "Online";
-      const eventId = await syncToGoogleCalendar({
+      const description = [
+        isMeeting && body.meeting_objective ? `Objetivo: ${body.meeting_objective}` : "",
+        isMeeting && body.meeting_agenda ? `Pauta:\n${body.meeting_agenda}` : "",
+        body.patient_name ? `Cliente: ${body.patient_name}` : "",
+        `Local: ${roomLabel} — Instituto RenovaSer`,
+      ].filter(Boolean).join("\n\n");
+      const event = await syncToGoogleCalendar({
         summary: body.title,
-        description: `${body.patient_name ? "Cliente: "+body.patient_name+"\\n" : ""}Sala: ${roomLabel} — Instituto RenovaSer`,
-        start_at: body.start_at,
-        end_at: body.end_at,
-        attendees: [...new Set(attendees)],
+        description,
+        start_at: row.start_at ?? times[index].start_at,
+        end_at: row.end_at ?? times[index].end_at,
+        attendees,
+        reminderMinutes,
+        onlineMeeting: modality === "online",
       });
-      if (eventId && data?.id) {
-        await supabase.from("appointments").update({ google_event_id: eventId }).eq("id", data.id);
-        (data as any).google_event_id = eventId;
+      if (event?.id) {
+        await supabase.from("appointments").update({ google_event_id: event.id, meeting_link: event.meetingLink }).eq("id", row.id);
+        created[index] = { ...row, google_event_id: event.id, meeting_link: event.meetingLink };
+      } else {
+        calendarWarning = "O agendamento foi salvo, mas não há uma conta Google Calendar conectada para enviar os convites.";
       }
     } catch (e) {
       console.error("Google sync falhou:", e);
+      calendarWarning = "O agendamento foi salvo, mas não foi possível enviar os convites do Google Calendar.";
     }
   }
 
-  return NextResponse.json(data, { status: 201 });
+  return NextResponse.json({ ...created[0], occurrences: created, calendar_warning: calendarWarning }, { status: 201 });
 }

@@ -23,6 +23,10 @@ se o valor anterior ainda estiver no histórico git (arquivo está gitignored, e
 2. Copie e execute o conteúdo de `supabase/schema.sql`
 3. Verifique que `rooms` tem 4 linhas e `users` tem os 4 admins.
 
+## Banco — habilitar recursos de reunião
+
+Depois do schema e das migrações anteriores, execute `supabase/migrate_meeting_features.sql` no SQL Editor do mesmo projeto. Essa migração cria os campos de pauta, convidados, atas, lembretes, encaminhamentos e recorrência, além da função para atualizar séries. A nova experiência de reuniões precisa dessa migração antes do deploy do código.
+
 ## O que já foi feito nesta entrega
 
 - [x] `supabase/schema.sql` — tabelas rooms/appointments/users + funções RPC `create_appointment` / `update_appointment` com trava atômica (online não bloqueia, auditório bloqueia salas e vice-versa)
