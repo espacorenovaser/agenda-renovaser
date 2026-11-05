@@ -754,7 +754,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
                 <input type="date" value={fDate} onChange={e=>setFDate(safeDateStr(e.target.value))} className="mt-1 w-full border-2 border-emerald-500 bg-emerald-50/30 rounded-lg px-3 py-2 font-medium" />
               </label>
               <label className="block text-sm">Categoria
-                <select value={fCategory} onChange={e=>setFCategory(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
+                <select value={fCategory} onChange={e=>setFCategory(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 cursor-pointer bg-white">
                   <option value="atendimento">Atendimento</option>
                   <option value="reuniao">Reunião</option>
                   <option value="evento">Evento</option>
@@ -885,14 +885,24 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
               <div className="border-2 border-amber-200 rounded-xl p-4 bg-amber-50/50 space-y-3">
                 <div className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Dados do evento / curso</div>
                 <label className="block text-sm font-medium">Tipo do evento*
-                  <select value={fEventoTipo} onChange={(e) => { setFEventoTipo(e.target.value); if (e.target.value !== "atendimento_grupo") setFEventCareType(""); }} className="mt-1 w-full border-2 border-amber-300 bg-white rounded-lg px-3 py-2">
+                  <select value={fEventoTipo} onChange={(e) => {
+                    const val = e.target.value;
+                    setFEventoTipo(val);
+                    if (val) {
+                      const found = EVENTO_TIPOS.find(t => t.id === val);
+                      if (found && (!fTitle || EVENTO_TIPOS.some(t => t.label === fTitle))) {
+                        setFTitle(found.label);
+                      }
+                    }
+                    if (val !== "atendimento_grupo") setFEventCareType("");
+                  }} className="mt-1 w-full border-2 border-amber-300 bg-white rounded-lg px-3 py-2 cursor-pointer">
                     <option value="">Selecione…</option>
                     {EVENTO_TIPOS.map((eventType) => <option key={eventType.id} value={eventType.id}>{eventType.label}</option>)}
                   </select>
                 </label>
                 {fEventoTipo === "atendimento_grupo" && (
                   <label className="block text-sm font-medium">Tipo de cuidado*
-                    <select value={fEventCareType} onChange={(e) => setFEventCareType(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white">
+                    <select value={fEventCareType} onChange={(e) => setFEventCareType(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 bg-white cursor-pointer">
                       <option value="">Selecione…</option>
                       {EVENTO_CUIDADOS.map((care) => <option key={care.id} value={care.id}>{care.label}</option>)}
                     </select>
@@ -973,7 +983,7 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
               <label className="block text-sm">Fim<input type="time" value={fEnd} onChange={e=>setFEnd(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2" /></label>
             </div>
             <label className="block text-sm">Modalidade
-              <select value={fModality} onChange={e=>setFModality(e.target.value as Appointment["modality"])} className="mt-1 w-full border rounded-lg px-3 py-2">
+              <select value={fModality} onChange={e=>setFModality(e.target.value as Appointment["modality"])} className="mt-1 w-full border rounded-lg px-3 py-2 cursor-pointer bg-white">
                 <option value="presencial">Presencial</option>
                 <option value="online">Online (não ocupa sala)</option>
                 <option value="externo">Evento externo — local do cliente (não ocupa sala)</option>
@@ -981,14 +991,14 @@ export default function AgendaClient({ initialView, initialDate, session }: { in
             </label>
             {fModality==="presencial" && (
               <label className="block text-sm">Sala
-                <select value={fRoom} onChange={e=>setFRoom(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
+                <select value={fRoom} onChange={e=>setFRoom(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 cursor-pointer bg-white">
                   {ROOMS.map(r=> <option key={r.id} value={r.id}>{r.nome}</option>)}
                 </select>
               </label>
             )}
             {session.isAdmin && (
               <label className="block text-sm">Profissional
-                <select value={fProf} onChange={e=>setFProf(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2">
+                <select value={fProf} onChange={e=>setFProf(e.target.value)} className="mt-1 w-full border rounded-lg px-3 py-2 cursor-pointer bg-white">
                   <option value={session.email}>{profName(session.email, session, professionals)} (você)</option>
                   {professionals.filter(p=>p.email.toLowerCase()!==session.email.toLowerCase()).map(p=> (
                     <option key={p.email} value={p.email}>{p.name ?? p.email}</option>
